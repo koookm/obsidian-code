@@ -24333,6 +24333,16 @@ User: ${prompt}` : historyContext : prompt;
     this.vaultPath = cwd2;
     const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
     const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
+    const OAUTH_OVERRIDE_VARS = /* @__PURE__ */ new Set(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]);
+    const baseEnv = {};
+    for (const [key, value] of Object.entries(process.env)) {
+      if (OAUTH_OVERRIDE_VARS.has(key) && !(key in customEnv)) {
+        continue;
+      }
+      if (value !== void 0) {
+        baseEnv[key] = value;
+      }
+    }
     const queryPrompt = this.buildPromptWithImages(prompt, images);
     const hasEditorContext = prompt.includes("<editor_selection");
     const systemPrompt = buildSystemPrompt({
@@ -24357,8 +24367,10 @@ User: ${prompt}` : historyContext : prompt;
       // are still discovered regardless (not in settings.json).
       settingSources: this.plugin.settings.loadUserClaudeSettings ? ["user", "project"] : ["project"],
       env: {
-        ...process.env,
+        ...baseEnv,
+        // Filtered env: API key vars removed unless user explicitly set them
         ...customEnv,
+        // User plugin settings take priority
         PATH: enhancedPath
       }
     };
@@ -39922,7 +39934,7 @@ var ObsidianCodePlugin = class extends import_obsidian28.Plugin {
       VIEW_TYPE_OBSIDIAN_CODE,
       (leaf) => new ObsidianCodeView(leaf, this)
     );
-    this.addRibbonIcon("bot", "Open Obsidian Code", () => {
+    this.addRibbonIcon("terminal", "Open Obsidian Code", () => {
       this.activateView();
     });
     this.addCommand({

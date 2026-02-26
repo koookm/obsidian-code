@@ -400,6 +400,24 @@ export class ObsidianCodeService {
     // Pass CLI path so we can auto-detect Node.js if using .js file
     const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
 
+    // Build base environment, filtering out API key vars that would override OAuth auth.
+    // When a user authenticates via Claude Max/Pro subscription (OAuth), the CLI reads
+    // credentials from ~/.claude/.credentials.json. If ANTHROPIC_API_KEY is present in
+    // the Obsidian process environment (set by another tool or system config), it gets
+    // passed to the CLI subprocess and switches it to API billing mode, causing
+    // "Credit balance too low" errors even for valid subscription users.
+    // We only pass these vars if the user explicitly set them in the plugin settings.
+    const OAUTH_OVERRIDE_VARS = new Set(['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN']);
+    const baseEnv: Record<string, string> = {};
+    for (const [key, value] of Object.entries(process.env)) {
+      if (OAUTH_OVERRIDE_VARS.has(key) && !(key in customEnv)) {
+        continue; // Do not let system-level API vars override OAuth subscription auth
+      }
+      if (value !== undefined) {
+        baseEnv[key] = value;
+      }
+    }
+
     // Build the prompt - either a string or content blocks with images
     const queryPrompt = this.buildPromptWithImages(prompt, images);
 
@@ -431,8 +449,8 @@ export class ObsidianCodeService {
         ? ['user', 'project']
         : ['project'],
       env: {
-        ...process.env,
-        ...customEnv,
+        ...baseEnv,    // Filtered env: API key vars removed unless user explicitly set them
+        ...customEnv,  // User plugin settings take priority
         PATH: enhancedPath,
       },
     };
