@@ -649,7 +649,7 @@ export class ObsidianCodeSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('사용 가능한 모델 새로고침')
-      .setDesc(`현재: ${modelSource}. Claude CLI를 통해 Anthropic에서 최신 모델 목록을 가져옵니다.`)
+      .setDesc(`현재: ${modelSource}. Anthropic API에서 최신 모델 목록을 가져옵니다. (ANTHROPIC_API_KEY가 환경 변수 설정에 있어야 합니다. Claude Max/Pro 구독 OAuth는 REST API 미지원.)`)
       .addButton((button) => {
         button
           .setButtonText('모델 목록 가져오기')
@@ -661,9 +661,9 @@ export class ObsidianCodeSettingTab extends PluginSettingTab {
               const count = this.plugin.runtimeAvailableModels?.length ?? 0;
               new Notice(`✓ ${count}개 모델을 성공적으로 불러왔습니다.`);
             } else {
-              new Notice('❌ 모델 목록 불러오기 실패. Claude CLI 경로와 인증 상태를 확인하세요.');
+              new Notice('❌ 모델 목록 불러오기 실패. 환경 변수에 ANTHROPIC_API_KEY를 설정하거나 기본 목록을 사용하세요.');
             }
-            this.display(); // Refresh settings page
+            this.display();
           });
       });
 

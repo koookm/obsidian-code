@@ -12538,7 +12538,7 @@ var ProcessTransport = class {
   spawnLocalProcess(spawnOptions) {
     const { command, args, cwd: cwd2, env, signal } = spawnOptions;
     const stderrMode = env.DEBUG_CLAUDE_AGENT_SDK || this.options.stderr ? "pipe" : "ignore";
-    const childProcess2 = (0, import_child_process.spawn)(command, args, {
+    const childProcess = (0, import_child_process.spawn)(command, args, {
       cwd: cwd2,
       stdio: ["pipe", "pipe", stderrMode],
       signal,
@@ -12546,7 +12546,7 @@ var ProcessTransport = class {
       windowsHide: true
     });
     if (env.DEBUG_CLAUDE_AGENT_SDK || this.options.stderr) {
-      childProcess2.stderr.on("data", (data) => {
+      childProcess.stderr.on("data", (data) => {
         const message = data.toString();
         logForSdkDebugging(message);
         if (this.options.stderr) {
@@ -12555,18 +12555,18 @@ var ProcessTransport = class {
       });
     }
     const mappedProcess = {
-      stdin: childProcess2.stdin,
-      stdout: childProcess2.stdout,
+      stdin: childProcess.stdin,
+      stdout: childProcess.stdout,
       get killed() {
-        return childProcess2.killed;
+        return childProcess.killed;
       },
       get exitCode() {
-        return childProcess2.exitCode;
+        return childProcess.exitCode;
       },
-      kill: childProcess2.kill.bind(childProcess2),
-      on: childProcess2.on.bind(childProcess2),
-      once: childProcess2.once.bind(childProcess2),
-      off: childProcess2.off.bind(childProcess2)
+      kill: childProcess.kill.bind(childProcess),
+      on: childProcess.on.bind(childProcess),
+      once: childProcess.once.bind(childProcess),
+      off: childProcess.off.bind(childProcess)
     };
     return mappedProcess;
   }
@@ -23138,22 +23138,27 @@ function getPathFromToolInput(toolName, toolInput) {
 var VIEW_TYPE_OBSIDIAN_CODE = "obsidian-code-view";
 
 // src/core/types/models.ts
-var childProcess = __toESM(require("child_process"));
-function fetchModelsFromCLI(cliPath) {
+function parseModelList(data) {
+  if (!(data == null ? void 0 : data.data) || !Array.isArray(data.data)) return null;
+  const models = data.data.filter((m) => typeof m.id === "string" && m.id.startsWith("claude-")).sort((a, b) => b.id.localeCompare(a.id)).map((m) => ({
+    value: m.id,
+    label: m.display_name || m.id.replace(/^claude-/, "Claude ").replace(/-(\d)/g, " $1").replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+    description: m.context_window ? `\uCEE8\uD14D\uC2A4\uD2B8 ${Math.round(m.context_window / 1e3)}k \uD1A0\uD070` : m.id
+  }));
+  return models.length > 0 ? models : null;
+}
+async function fetchModelsFromCLI(_cliPath) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
   try {
-    const result = childProcess.spawnSync(cliPath, ["api", "get", "/v1/models"], {
-      encoding: "utf-8",
-      timeout: 15e3
+    const res = await fetch("https://api.anthropic.com/v1/models", {
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01"
+      }
     });
-    if (result.status !== 0 || !result.stdout) return null;
-    const data = JSON.parse(result.stdout);
-    if (!data.data || !Array.isArray(data.data)) return null;
-    const models = data.data.filter((m) => typeof m.id === "string" && m.id.startsWith("claude-")).sort((a, b) => b.id.localeCompare(a.id)).map((m) => ({
-      value: m.id,
-      label: m.display_name || m.id.replace(/^claude-/, "Claude ").replace(/-(\d)/g, " $1").replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-      description: m.context_window ? `\uCEE8\uD14D\uC2A4\uD2B8 ${Math.round(m.context_window / 1e3)}k \uD1A0\uD070` : m.id
-    }));
-    return models.length > 0 ? models : null;
+    if (!res.ok) return null;
+    return parseModelList(await res.json());
   } catch (e) {
     return null;
   }
@@ -39856,7 +39861,7 @@ var ObsidianCodeSettingTab = class extends import_obsidian27.PluginSettingTab {
     new import_obsidian27.Setting(containerEl).setName("\uBAA8\uB378 \uC120\uD0DD").setHeading();
     const availableModels = this.plugin.getAvailableModels();
     const modelSource = this.plugin.runtimeAvailableModels ? `Anthropic API\uC5D0\uC11C ${availableModels.length}\uAC1C \uBAA8\uB378 \uB85C\uB4DC\uB428` : `\uAE30\uBCF8 \uBAA8\uB378 \uBAA9\uB85D \uC0AC\uC6A9 \uC911 (${availableModels.length}\uAC1C)`;
-    new import_obsidian27.Setting(containerEl).setName("\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uBAA8\uB378 \uC0C8\uB85C\uACE0\uCE68").setDesc(`\uD604\uC7AC: ${modelSource}. Claude CLI\uB97C \uD1B5\uD574 Anthropic\uC5D0\uC11C \uCD5C\uC2E0 \uBAA8\uB378 \uBAA9\uB85D\uC744 \uAC00\uC838\uC635\uB2C8\uB2E4.`).addButton((button) => {
+    new import_obsidian27.Setting(containerEl).setName("\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uBAA8\uB378 \uC0C8\uB85C\uACE0\uCE68").setDesc(`\uD604\uC7AC: ${modelSource}. Anthropic API\uC5D0\uC11C \uCD5C\uC2E0 \uBAA8\uB378 \uBAA9\uB85D\uC744 \uAC00\uC838\uC635\uB2C8\uB2E4. (ANTHROPIC_API_KEY\uAC00 \uD658\uACBD \uBCC0\uC218 \uC124\uC815\uC5D0 \uC788\uC5B4\uC57C \uD569\uB2C8\uB2E4. Claude Max/Pro \uAD6C\uB3C5 OAuth\uB294 REST API \uBBF8\uC9C0\uC6D0.)`).addButton((button) => {
       button.setButtonText("\uBAA8\uB378 \uBAA9\uB85D \uAC00\uC838\uC624\uAE30").onClick(async () => {
         var _a, _b;
         button.setButtonText("\uBD88\uB7EC\uC624\uB294 \uC911...");
@@ -39866,7 +39871,7 @@ var ObsidianCodeSettingTab = class extends import_obsidian27.PluginSettingTab {
           const count = (_b = (_a = this.plugin.runtimeAvailableModels) == null ? void 0 : _a.length) != null ? _b : 0;
           new import_obsidian27.Notice(`\u2713 ${count}\uAC1C \uBAA8\uB378\uC744 \uC131\uACF5\uC801\uC73C\uB85C \uBD88\uB7EC\uC654\uC2B5\uB2C8\uB2E4.`);
         } else {
-          new import_obsidian27.Notice("\u274C \uBAA8\uB378 \uBAA9\uB85D \uBD88\uB7EC\uC624\uAE30 \uC2E4\uD328. Claude CLI \uACBD\uB85C\uC640 \uC778\uC99D \uC0C1\uD0DC\uB97C \uD655\uC778\uD558\uC138\uC694.");
+          new import_obsidian27.Notice("\u274C \uBAA8\uB378 \uBAA9\uB85D \uBD88\uB7EC\uC624\uAE30 \uC2E4\uD328. \uD658\uACBD \uBCC0\uC218\uC5D0 ANTHROPIC_API_KEY\uB97C \uC124\uC815\uD558\uAC70\uB098 \uAE30\uBCF8 \uBAA9\uB85D\uC744 \uC0AC\uC6A9\uD558\uC138\uC694.");
         }
         this.display();
       });
@@ -39992,11 +39997,11 @@ var ObsidianCodePlugin = class extends import_obsidian28.Plugin {
     this.runtimeEnvironmentVariables = "";
     this.hasNotifiedEnvChange = false;
   }
-  /** Fetch the latest available models from the CLI and cache them at runtime. */
+  /** Fetch the latest available models from Anthropic API and cache them at runtime. */
   async refreshAvailableModels() {
-    const cliPath = this.getResolvedClaudeCliPath();
-    if (!cliPath) return false;
-    const models = fetchModelsFromCLI(cliPath);
+    var _a;
+    const cliPath = (_a = this.getResolvedClaudeCliPath()) != null ? _a : "";
+    const models = await fetchModelsFromCLI(cliPath);
     if (models) {
       this.runtimeAvailableModels = models;
       return true;

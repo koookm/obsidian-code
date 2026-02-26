@@ -2,44 +2,54 @@
  * Model type definitions and constants.
  */
 
-import * as childProcess from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 /** Model identifier (string to support custom models via environment variables). */
 export type ClaudeModel = string;
 
-/** Fetches the list of available Claude models from the CLI using OAuth credentials.
- *  Returns null if the CLI is unavailable or the request fails. */
-export function fetchModelsFromCLI(
-  cliPath: string
-): { value: string; label: string; description: string }[] | null {
+/** Parse and format a raw model list from the Anthropic API response. */
+function parseModelList(data: any): { value: string; label: string; description: string }[] | null {
+  if (!data?.data || !Array.isArray(data.data)) return null;
+  const models = (data.data as any[])
+    .filter((m) => typeof m.id === 'string' && m.id.startsWith('claude-'))
+    .sort((a, b) => b.id.localeCompare(a.id))
+    .map((m) => ({
+      value: m.id as string,
+      label: (m.display_name as string | undefined) ||
+        (m.id as string)
+          .replace(/^claude-/, 'Claude ')
+          .replace(/-(\d)/g, ' $1')
+          .replace(/-/g, ' ')
+          .replace(/\b\w/g, (c: string) => c.toUpperCase()),
+      description: m.context_window
+        ? `컨텍스트 ${Math.round((m.context_window as number) / 1000)}k 토큰`
+        : m.id as string,
+    }));
+  return models.length > 0 ? models : null;
+}
+
+/**
+ * Fetches the list of available Claude models from the Anthropic API.
+ * Requires ANTHROPIC_API_KEY — Anthropic's REST API does not support OAuth tokens.
+ * Returns null if no API key is available or the request fails.
+ */
+export async function fetchModelsFromCLI(
+  _cliPath: string
+): Promise<{ value: string; label: string; description: string }[] | null> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
+
   try {
-    const result = childProcess.spawnSync(cliPath, ['api', 'get', '/v1/models'], {
-      encoding: 'utf-8',
-      timeout: 15000,
+    const res = await fetch('https://api.anthropic.com/v1/models', {
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
     });
-
-    if (result.status !== 0 || !result.stdout) return null;
-
-    const data = JSON.parse(result.stdout);
-    if (!data.data || !Array.isArray(data.data)) return null;
-
-    const models = (data.data as any[])
-      .filter((m) => typeof m.id === 'string' && m.id.startsWith('claude-'))
-      .sort((a, b) => b.id.localeCompare(a.id))
-      .map((m) => ({
-        value: m.id as string,
-        label: (m.display_name as string | undefined) ||
-          (m.id as string)
-            .replace(/^claude-/, 'Claude ')
-            .replace(/-(\d)/g, ' $1')
-            .replace(/-/g, ' ')
-            .replace(/\b\w/g, (c: string) => c.toUpperCase()),
-        description: m.context_window
-          ? `컨텍스트 ${Math.round((m.context_window as number) / 1000)}k 토큰`
-          : m.id as string,
-      }));
-
-    return models.length > 0 ? models : null;
+    if (!res.ok) return null;
+    return parseModelList(await res.json());
   } catch {
     return null;
   }

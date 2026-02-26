@@ -47,11 +47,10 @@ export default class ObsidianCodePlugin extends Plugin {
   private runtimeEnvironmentVariables = '';
   private hasNotifiedEnvChange = false;
 
-  /** Fetch the latest available models from the CLI and cache them at runtime. */
+  /** Fetch the latest available models from Anthropic API and cache them at runtime. */
   async refreshAvailableModels(): Promise<boolean> {
-    const cliPath = this.getResolvedClaudeCliPath();
-    if (!cliPath) return false;
-    const models = fetchModelsFromCLI(cliPath);
+    const cliPath = this.getResolvedClaudeCliPath() ?? '';
+    const models = await fetchModelsFromCLI(cliPath);
     if (models) {
       this.runtimeAvailableModels = models;
       return true;
