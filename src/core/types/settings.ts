@@ -156,10 +156,10 @@ export const DEFAULT_SETTINGS: ObsidianCodeSettings = {
   userName: '',
   enableBlocklist: true,
   blockedCommands: getDefaultBlockedCommands(),
-  model: 'haiku',
+  model: 'sonnet',  // Claude Max 구독 기본 모델
   enableAutoTitleGeneration: true,
   titleGenerationModel: '',  // Empty = auto (ANTHROPIC_DEFAULT_HAIKU_MODEL or claude-haiku-4-5)
-  lastClaudeModel: 'haiku',
+  lastClaudeModel: 'sonnet',
   lastCustomModel: '',
   lastEnvHash: '',
   thinkingBudget: 'off',

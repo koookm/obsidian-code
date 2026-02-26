@@ -5,6 +5,8 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import type { App } from 'obsidian';
 import { Notice, PluginSettingTab, Setting } from 'obsidian';
 
@@ -78,6 +80,49 @@ export class ObsidianCodeSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.addClass('oc-settings');
+
+    // Claude Max 인증 상태 섹션
+    new Setting(containerEl).setName('Claude Max 구독 인증').setHeading();
+
+    const authStatusEl = containerEl.createDiv({ cls: 'oc-auth-status' });
+    authStatusEl.style.padding = '12px 16px';
+    authStatusEl.style.marginBottom = '12px';
+    authStatusEl.style.borderRadius = '6px';
+    authStatusEl.style.fontSize = '0.9em';
+    authStatusEl.style.lineHeight = '1.6';
+
+    // 인증 상태 체크
+    const credentialsPath = path.join(os.homedir(), '.claude', '.credentials.json');
+    const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+    const isAuthenticated = fs.existsSync(credentialsPath) || fs.existsSync(settingsPath);
+
+    if (isAuthenticated) {
+      authStatusEl.style.background = 'var(--background-modifier-success)';
+      authStatusEl.style.border = '1px solid var(--color-green)';
+      authStatusEl.innerHTML = `
+        <div style="font-weight:600;color:var(--color-green);margin-bottom:4px;">✓ Claude Max 구독 인증 완료</div>
+        <div>Claude Code CLI로 로그인되어 있습니다. API 키 없이 Claude Max 구독 크레딧으로 사용할 수 있습니다.</div>
+      `;
+    } else {
+      authStatusEl.style.background = 'var(--background-modifier-error)';
+      authStatusEl.style.border = '1px solid var(--color-red)';
+      authStatusEl.innerHTML = `
+        <div style="font-weight:600;color:var(--color-red);margin-bottom:4px;">✗ 인증 필요</div>
+        <div>터미널에서 <code>claude</code> 명령어를 실행하여 Claude Max 구독 계정으로 로그인하세요.</div>
+        <div style="margin-top:4px;color:var(--text-muted);">npm install -g @anthropic-ai/claude-code &nbsp;→&nbsp; claude</div>
+      `;
+    }
+
+    new Setting(containerEl)
+      .setName('인증 상태 새로고침')
+      .setDesc('Claude Code CLI 로그인 후 이 버튼을 클릭하여 상태를 업데이트하세요.')
+      .addButton((button) =>
+        button
+          .setButtonText('새로고침')
+          .onClick(() => {
+            this.display();
+          })
+      );
 
     // Customization section
     new Setting(containerEl).setName('Customization').setHeading();
@@ -576,10 +621,10 @@ export class ObsidianCodeSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Custom variables')
-      .setDesc('Environment variables for Claude SDK (KEY=VALUE format, one per line)')
+      .setDesc('환경 변수 설정 (KEY=VALUE 형식, 한 줄에 하나씩). Claude Max 구독 사용자는 API 키가 필요 없습니다. Claude Code CLI 로그인으로 자동 인증됩니다.')
       .addTextArea((text) => {
         text
-          .setPlaceholder('ANTHROPIC_API_KEY=your-key\nANTHROPIC_BASE_URL=https://api.example.com\nANTHROPIC_MODEL=custom-model')
+          .setPlaceholder('# Claude Max 구독: API 키 불필요 (CLI 로그인으로 자동 인증)\n# 선택사항:\n# ANTHROPIC_MODEL=claude-sonnet-4-5\n# ANTHROPIC_BASE_URL=https://api.example.com')
           .setValue(this.plugin.settings.environmentVariables)
           .onChange(async (value) => {
             await this.plugin.applyEnvironmentVariables(value);
@@ -597,9 +642,9 @@ export class ObsidianCodeSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName('Advanced').setHeading();
 
     const cliPathDescription = (process.platform === 'win32'
-      ? 'Custom path to Claude Code CLI. Leave empty for auto-detection. For the native installer, use claude.exe. For npm/pnpm/yarn or other package manager installs, use the cli.js path (not claude.cmd).'
-      : 'Custom path to Claude Code CLI. Leave empty for auto-detection. Paste the output of "which claude" — works for both native and npm/pnpm/yarn installs.')
-      + ' **Note: You must install the Claude Code CLI (`npm install -g @anthropic-ai/claude-code`) and run it once in your terminal to authenticate via browser.**';
+      ? 'Claude Code CLI 경로 (비워두면 자동 감지). 네이티브 설치는 claude.exe, npm/pnpm/yarn 설치는 cli.js 경로 사용 (claude.cmd 사용 불가).'
+      : 'Claude Code CLI 경로 (비워두면 자동 감지). "which claude" 출력값을 붙여넣으세요.')
+      + ' **Claude Max 구독 인증: 터미널에서 `npm install -g @anthropic-ai/claude-code` 설치 후 `claude` 실행하여 브라우저로 로그인하세요. API 키 없이 Max 구독 크레딧이 사용됩니다.**';
 
     const cliPathSetting = new Setting(containerEl)
       .setName('Claude Code CLI path')
