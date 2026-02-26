@@ -638,6 +638,52 @@ export class ObsidianCodeSettingTab extends PluginSettingTab {
     const envSnippetsContainer = containerEl.createDiv({ cls: 'oc-env-snippets-container' });
     new EnvSnippetManager(envSnippetsContainer, this.plugin);
 
+    // Model section
+    new Setting(containerEl).setName('모델 선택').setHeading();
+
+    // Show current available models
+    const availableModels = this.plugin.getAvailableModels();
+    const modelSource = this.plugin.runtimeAvailableModels
+      ? `Anthropic API에서 ${availableModels.length}개 모델 로드됨`
+      : `기본 모델 목록 사용 중 (${availableModels.length}개)`;
+
+    new Setting(containerEl)
+      .setName('사용 가능한 모델 새로고침')
+      .setDesc(`현재: ${modelSource}. Claude CLI를 통해 Anthropic에서 최신 모델 목록을 가져옵니다.`)
+      .addButton((button) => {
+        button
+          .setButtonText('모델 목록 가져오기')
+          .onClick(async () => {
+            button.setButtonText('불러오는 중...');
+            button.setDisabled(true);
+            const success = await this.plugin.refreshAvailableModels();
+            if (success) {
+              const count = this.plugin.runtimeAvailableModels?.length ?? 0;
+              new Notice(`✓ ${count}개 모델을 성공적으로 불러왔습니다.`);
+            } else {
+              new Notice('❌ 모델 목록 불러오기 실패. Claude CLI 경로와 인증 상태를 확인하세요.');
+            }
+            this.display(); // Refresh settings page
+          });
+      });
+
+    // Current model dropdown
+    new Setting(containerEl)
+      .setName('기본 모델')
+      .setDesc('채팅에서 사용할 기본 Claude 모델')
+      .addDropdown((dropdown) => {
+        const models = this.plugin.getAvailableModels();
+        for (const model of models) {
+          dropdown.addOption(model.value, `${model.label}${model.description ? ' — ' + model.description : ''}`);
+        }
+        dropdown
+          .setValue(this.plugin.settings.model)
+          .onChange(async (value) => {
+            this.plugin.settings.model = value;
+            await this.plugin.saveSettings();
+          });
+      });
+
     // Advanced section
     new Setting(containerEl).setName('Advanced').setHeading();
 

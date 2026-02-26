@@ -322,6 +322,7 @@ export class ObsidianCodeView extends ItemView {
         lastNonPlanPermissionMode: this.plugin.settings.lastNonPlanPermissionMode,
       }),
       getEnvironmentVariables: () => this.plugin.getActiveEnvironmentVariables(),
+      getRuntimeModels: () => this.plugin.runtimeAvailableModels,
       isAgentInitiatedPlanMode: () => this.state.planModeState?.agentInitiated ?? false,
       isPlanModeRequested: () => this.state.planModeRequested,
       onModelChange: async (model: ClaudeModel) => {

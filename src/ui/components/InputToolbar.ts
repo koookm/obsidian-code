@@ -35,6 +35,8 @@ export interface ToolbarCallbacks {
   onPermissionModeChange: (mode: PermissionMode) => Promise<void>;
   getSettings: () => ToolbarSettings;
   getEnvironmentVariables?: () => string;
+  /** Returns the runtime-fetched model list (or null to use default). */
+  getRuntimeModels?: () => { value: string; label: string; description: string }[] | null;
   /** Whether plan mode was initiated by the agent (EnterPlanMode tool). */
   isAgentInitiatedPlanMode?: () => boolean;
   /** Whether the user has requested plan mode (UI/prefix only). */
@@ -54,25 +56,28 @@ export class ModelSelector {
     this.render();
   }
 
-  /** Returns available models (custom from env vars, or defaults). */
+  /** Returns available models: runtime-fetched > env var custom > default hardcoded. */
   private getAvailableModels() {
-    let models: { value: string; label: string; description: string }[] = [];
+    // 1. Runtime-fetched models from Anthropic API (via CLI) take highest priority
+    if (this.callbacks.getRuntimeModels) {
+      const runtimeModels = this.callbacks.getRuntimeModels();
+      if (runtimeModels && runtimeModels.length > 0) {
+        return runtimeModels;
+      }
+    }
 
+    // 2. Custom models from environment variables
     if (this.callbacks.getEnvironmentVariables) {
       const envVarsStr = this.callbacks.getEnvironmentVariables();
       const envVars = parseEnvironmentVariables(envVarsStr);
       const customModels = getModelsFromEnvironment(envVars);
-
       if (customModels.length > 0) {
-        models = customModels;
-      } else {
-        models = [...DEFAULT_CLAUDE_MODELS];
+        return customModels;
       }
-    } else {
-      models = [...DEFAULT_CLAUDE_MODELS];
     }
 
-    return models;
+    // 3. Hardcoded default list
+    return [...DEFAULT_CLAUDE_MODELS];
   }
 
   private render() {

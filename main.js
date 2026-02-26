@@ -12538,7 +12538,7 @@ var ProcessTransport = class {
   spawnLocalProcess(spawnOptions) {
     const { command, args, cwd: cwd2, env, signal } = spawnOptions;
     const stderrMode = env.DEBUG_CLAUDE_AGENT_SDK || this.options.stderr ? "pipe" : "ignore";
-    const childProcess = (0, import_child_process.spawn)(command, args, {
+    const childProcess2 = (0, import_child_process.spawn)(command, args, {
       cwd: cwd2,
       stdio: ["pipe", "pipe", stderrMode],
       signal,
@@ -12546,7 +12546,7 @@ var ProcessTransport = class {
       windowsHide: true
     });
     if (env.DEBUG_CLAUDE_AGENT_SDK || this.options.stderr) {
-      childProcess.stderr.on("data", (data) => {
+      childProcess2.stderr.on("data", (data) => {
         const message = data.toString();
         logForSdkDebugging(message);
         if (this.options.stderr) {
@@ -12555,18 +12555,18 @@ var ProcessTransport = class {
       });
     }
     const mappedProcess = {
-      stdin: childProcess.stdin,
-      stdout: childProcess.stdout,
+      stdin: childProcess2.stdin,
+      stdout: childProcess2.stdout,
       get killed() {
-        return childProcess.killed;
+        return childProcess2.killed;
       },
       get exitCode() {
-        return childProcess.exitCode;
+        return childProcess2.exitCode;
       },
-      kill: childProcess.kill.bind(childProcess),
-      on: childProcess.on.bind(childProcess),
-      once: childProcess.once.bind(childProcess),
-      off: childProcess.off.bind(childProcess)
+      kill: childProcess2.kill.bind(childProcess2),
+      on: childProcess2.on.bind(childProcess2),
+      once: childProcess2.once.bind(childProcess2),
+      off: childProcess2.off.bind(childProcess2)
     };
     return mappedProcess;
   }
@@ -23138,10 +23138,38 @@ function getPathFromToolInput(toolName, toolInput) {
 var VIEW_TYPE_OBSIDIAN_CODE = "obsidian-code-view";
 
 // src/core/types/models.ts
+var childProcess = __toESM(require("child_process"));
+function fetchModelsFromCLI(cliPath) {
+  try {
+    const result = childProcess.spawnSync(cliPath, ["api", "get", "/v1/models"], {
+      encoding: "utf-8",
+      timeout: 15e3
+    });
+    if (result.status !== 0 || !result.stdout) return null;
+    const data = JSON.parse(result.stdout);
+    if (!data.data || !Array.isArray(data.data)) return null;
+    const models = data.data.filter((m) => typeof m.id === "string" && m.id.startsWith("claude-")).sort((a, b) => b.id.localeCompare(a.id)).map((m) => ({
+      value: m.id,
+      label: m.display_name || m.id.replace(/^claude-/, "Claude ").replace(/-(\d)/g, " $1").replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+      description: m.context_window ? `\uCEE8\uD14D\uC2A4\uD2B8 ${Math.round(m.context_window / 1e3)}k \uD1A0\uD070` : m.id
+    }));
+    return models.length > 0 ? models : null;
+  } catch (e) {
+    return null;
+  }
+}
 var DEFAULT_CLAUDE_MODELS = [
-  { value: "haiku", label: "Haiku", description: "Claude Haiku (Latest via CLI)" },
-  { value: "sonnet", label: "Sonnet", description: "Claude Sonnet (Latest via CLI)" },
-  { value: "opus", label: "Opus", description: "Claude Opus (Latest via CLI)" }
+  // --- Claude 4.6 (최신) ---
+  { value: "claude-opus-4-6", label: "Claude Opus 4.6", description: "\uAC00\uC7A5 \uAC15\uB825\uD55C \uBAA8\uB378 \u2014 \uBCF5\uC7A1\uD55C \uC791\uC5C5\uC5D0 \uCD5C\uC801" },
+  { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", description: "\uC131\uB2A5\uACFC \uC18D\uB3C4\uC758 \uADE0\uD615 \u2014 \uC77C\uBC18 \uC791\uC5C5 \uAD8C\uC7A5" },
+  // --- Claude 4.5 ---
+  { value: "claude-haiku-4-5", label: "Claude Haiku 4.5", description: "\uBE60\uB974\uACE0 \uAC00\uBCBC\uC6B4 \uBAA8\uB378 \u2014 \uAC04\uB2E8\uD55C \uC791\uC5C5\uC5D0 \uC801\uD569" },
+  { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5", description: "Sonnet \uC774\uC804 \uBC84\uC804" },
+  { value: "claude-opus-4-5", label: "Claude Opus 4.5", description: "Opus \uC774\uC804 \uBC84\uC804" },
+  // --- CLI 별칭 (항상 최신 버전으로 자동 해석) ---
+  { value: "haiku", label: "Haiku (\uD56D\uC0C1 \uCD5C\uC2E0)", description: "CLI\uAC00 \uC790\uB3D9\uC73C\uB85C \uCD5C\uC2E0 Haiku \uBC84\uC804\uC73C\uB85C \uC5F0\uACB0" },
+  { value: "sonnet", label: "Sonnet (\uD56D\uC0C1 \uCD5C\uC2E0)", description: "CLI\uAC00 \uC790\uB3D9\uC73C\uB85C \uCD5C\uC2E0 Sonnet \uBC84\uC804\uC73C\uB85C \uC5F0\uACB0" },
+  { value: "opus", label: "Opus (\uD56D\uC0C1 \uCD5C\uC2E0)", description: "CLI\uAC00 \uC790\uB3D9\uC73C\uB85C \uCD5C\uC2E0 Opus \uBC84\uC804\uC73C\uB85C \uC5F0\uACB0" }
 ];
 var THINKING_BUDGETS = [
   { value: "off", label: "Off", tokens: 0 },
@@ -23151,9 +23179,17 @@ var THINKING_BUDGETS = [
   { value: "xhigh", label: "Ultra", tokens: 32e3 }
 ];
 var DEFAULT_THINKING_BUDGET = {
+  // CLI 별칭
   "haiku": "off",
   "sonnet": "low",
-  "opus": "medium"
+  "opus": "medium",
+  // Claude 4.6
+  "claude-opus-4-6": "medium",
+  "claude-sonnet-4-6": "low",
+  // Claude 4.5
+  "claude-haiku-4-5": "off",
+  "claude-sonnet-4-5": "low",
+  "claude-opus-4-5": "medium"
 };
 
 // src/core/types/settings.ts
@@ -28503,22 +28539,23 @@ var ModelSelector = class {
     this.container = parentEl.createDiv({ cls: "oc-model-selector" });
     this.render();
   }
-  /** Returns available models (custom from env vars, or defaults). */
+  /** Returns available models: runtime-fetched > env var custom > default hardcoded. */
   getAvailableModels() {
-    let models = [];
+    if (this.callbacks.getRuntimeModels) {
+      const runtimeModels = this.callbacks.getRuntimeModels();
+      if (runtimeModels && runtimeModels.length > 0) {
+        return runtimeModels;
+      }
+    }
     if (this.callbacks.getEnvironmentVariables) {
       const envVarsStr = this.callbacks.getEnvironmentVariables();
       const envVars = parseEnvironmentVariables(envVarsStr);
       const customModels = getModelsFromEnvironment(envVars);
       if (customModels.length > 0) {
-        models = customModels;
-      } else {
-        models = [...DEFAULT_CLAUDE_MODELS];
+        return customModels;
       }
-    } else {
-      models = [...DEFAULT_CLAUDE_MODELS];
     }
-    return models;
+    return [...DEFAULT_CLAUDE_MODELS];
   }
   render() {
     this.container.empty();
@@ -38406,6 +38443,7 @@ var ObsidianCodeView = class extends import_obsidian25.ItemView {
         lastNonPlanPermissionMode: this.plugin.settings.lastNonPlanPermissionMode
       }),
       getEnvironmentVariables: () => this.plugin.getActiveEnvironmentVariables(),
+      getRuntimeModels: () => this.plugin.runtimeAvailableModels,
       isAgentInitiatedPlanMode: () => {
         var _a2, _b;
         return (_b = (_a2 = this.state.planModeState) == null ? void 0 : _a2.agentInitiated) != null ? _b : false;
@@ -39815,6 +39853,34 @@ var ObsidianCodeSettingTab = class extends import_obsidian27.PluginSettingTab {
     });
     const envSnippetsContainer = containerEl.createDiv({ cls: "oc-env-snippets-container" });
     new EnvSnippetManager(envSnippetsContainer, this.plugin);
+    new import_obsidian27.Setting(containerEl).setName("\uBAA8\uB378 \uC120\uD0DD").setHeading();
+    const availableModels = this.plugin.getAvailableModels();
+    const modelSource = this.plugin.runtimeAvailableModels ? `Anthropic API\uC5D0\uC11C ${availableModels.length}\uAC1C \uBAA8\uB378 \uB85C\uB4DC\uB428` : `\uAE30\uBCF8 \uBAA8\uB378 \uBAA9\uB85D \uC0AC\uC6A9 \uC911 (${availableModels.length}\uAC1C)`;
+    new import_obsidian27.Setting(containerEl).setName("\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uBAA8\uB378 \uC0C8\uB85C\uACE0\uCE68").setDesc(`\uD604\uC7AC: ${modelSource}. Claude CLI\uB97C \uD1B5\uD574 Anthropic\uC5D0\uC11C \uCD5C\uC2E0 \uBAA8\uB378 \uBAA9\uB85D\uC744 \uAC00\uC838\uC635\uB2C8\uB2E4.`).addButton((button) => {
+      button.setButtonText("\uBAA8\uB378 \uBAA9\uB85D \uAC00\uC838\uC624\uAE30").onClick(async () => {
+        var _a, _b;
+        button.setButtonText("\uBD88\uB7EC\uC624\uB294 \uC911...");
+        button.setDisabled(true);
+        const success = await this.plugin.refreshAvailableModels();
+        if (success) {
+          const count = (_b = (_a = this.plugin.runtimeAvailableModels) == null ? void 0 : _a.length) != null ? _b : 0;
+          new import_obsidian27.Notice(`\u2713 ${count}\uAC1C \uBAA8\uB378\uC744 \uC131\uACF5\uC801\uC73C\uB85C \uBD88\uB7EC\uC654\uC2B5\uB2C8\uB2E4.`);
+        } else {
+          new import_obsidian27.Notice("\u274C \uBAA8\uB378 \uBAA9\uB85D \uBD88\uB7EC\uC624\uAE30 \uC2E4\uD328. Claude CLI \uACBD\uB85C\uC640 \uC778\uC99D \uC0C1\uD0DC\uB97C \uD655\uC778\uD558\uC138\uC694.");
+        }
+        this.display();
+      });
+    });
+    new import_obsidian27.Setting(containerEl).setName("\uAE30\uBCF8 \uBAA8\uB378").setDesc("\uCC44\uD305\uC5D0\uC11C \uC0AC\uC6A9\uD560 \uAE30\uBCF8 Claude \uBAA8\uB378").addDropdown((dropdown) => {
+      const models = this.plugin.getAvailableModels();
+      for (const model of models) {
+        dropdown.addOption(model.value, `${model.label}${model.description ? " \u2014 " + model.description : ""}`);
+      }
+      dropdown.setValue(this.plugin.settings.model).onChange(async (value) => {
+        this.plugin.settings.model = value;
+        await this.plugin.saveSettings();
+      });
+    });
     new import_obsidian27.Setting(containerEl).setName("Advanced").setHeading();
     const cliPathDescription = (process.platform === "win32" ? "Claude Code CLI \uACBD\uB85C (\uBE44\uC6CC\uB450\uBA74 \uC790\uB3D9 \uAC10\uC9C0). \uB124\uC774\uD2F0\uBE0C \uC124\uCE58\uB294 claude.exe, npm/pnpm/yarn \uC124\uCE58\uB294 cli.js \uACBD\uB85C \uC0AC\uC6A9 (claude.cmd \uC0AC\uC6A9 \uBD88\uAC00)." : 'Claude Code CLI \uACBD\uB85C (\uBE44\uC6CC\uB450\uBA74 \uC790\uB3D9 \uAC10\uC9C0). "which claude" \uCD9C\uB825\uAC12\uC744 \uBD99\uC5EC\uB123\uC73C\uC138\uC694.') + " **Claude Max \uAD6C\uB3C5 \uC778\uC99D: \uD130\uBBF8\uB110\uC5D0\uC11C `npm install -g @anthropic-ai/claude-code` \uC124\uCE58 \uD6C4 `claude` \uC2E4\uD589\uD558\uC5EC \uBE0C\uB77C\uC6B0\uC800\uB85C \uB85C\uADF8\uC778\uD558\uC138\uC694. API \uD0A4 \uC5C6\uC774 Max \uAD6C\uB3C5 \uD06C\uB808\uB527\uC774 \uC0AC\uC6A9\uB429\uB2C8\uB2E4.**";
     const cliPathSetting = new import_obsidian27.Setting(containerEl).setName("Claude Code CLI path").setDesc(cliPathDescription);
@@ -39919,10 +39985,28 @@ function resolveClaudeCliPath(customPath, envText) {
 var ObsidianCodePlugin = class extends import_obsidian28.Plugin {
   constructor() {
     super(...arguments);
+    /** Runtime-cached model list fetched from the Claude CLI (not persisted). */
+    this.runtimeAvailableModels = null;
     this.conversations = [];
     this.activeConversationId = null;
     this.runtimeEnvironmentVariables = "";
     this.hasNotifiedEnvChange = false;
+  }
+  /** Fetch the latest available models from the CLI and cache them at runtime. */
+  async refreshAvailableModels() {
+    const cliPath = this.getResolvedClaudeCliPath();
+    if (!cliPath) return false;
+    const models = fetchModelsFromCLI(cliPath);
+    if (models) {
+      this.runtimeAvailableModels = models;
+      return true;
+    }
+    return false;
+  }
+  /** Returns the current model list: runtime-fetched > default hardcoded. */
+  getAvailableModels() {
+    var _a;
+    return (_a = this.runtimeAvailableModels) != null ? _a : DEFAULT_CLAUDE_MODELS;
   }
   async onload() {
     await this.loadSettings();

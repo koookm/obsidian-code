@@ -21,6 +21,7 @@ import {
   DEFAULT_SETTINGS,
   VIEW_TYPE_OBSIDIAN_CODE,
 } from './core/types';
+import { fetchModelsFromCLI } from './core/types/models';
 import { ObsidianCodeView } from './features/chat/ObsidianCodeView';
 import { McpService } from './features/mcp/McpService';
 import { ObsidianCodeSettingTab } from './features/settings/ObsidianCodeSettings';
@@ -39,10 +40,29 @@ export default class ObsidianCodePlugin extends Plugin {
   mcpService: McpService;
   storage: StorageService;
   cliResolver: ClaudeCliResolver;
+  /** Runtime-cached model list fetched from the Claude CLI (not persisted). */
+  runtimeAvailableModels: { value: string; label: string; description: string }[] | null = null;
   private conversations: Conversation[] = [];
   private activeConversationId: string | null = null;
   private runtimeEnvironmentVariables = '';
   private hasNotifiedEnvChange = false;
+
+  /** Fetch the latest available models from the CLI and cache them at runtime. */
+  async refreshAvailableModels(): Promise<boolean> {
+    const cliPath = this.getResolvedClaudeCliPath();
+    if (!cliPath) return false;
+    const models = fetchModelsFromCLI(cliPath);
+    if (models) {
+      this.runtimeAvailableModels = models;
+      return true;
+    }
+    return false;
+  }
+
+  /** Returns the current model list: runtime-fetched > default hardcoded. */
+  getAvailableModels(): { value: string; label: string; description: string }[] {
+    return this.runtimeAvailableModels ?? DEFAULT_CLAUDE_MODELS;
+  }
 
   async onload() {
     await this.loadSettings();
