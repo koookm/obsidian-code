@@ -65,9 +65,9 @@ export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; descrip
   { value: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5', description: 'Sonnet 이전 버전' },
   { value: 'claude-opus-4-5',   label: 'Claude Opus 4.5',   description: 'Opus 이전 버전' },
   // --- CLI 별칭 (항상 최신 버전으로 자동 해석) ---
-  { value: 'haiku',  label: 'Haiku (항상 최신)',  description: 'CLI가 자동으로 최신 Haiku 버전으로 연결' },
-  { value: 'sonnet', label: 'Sonnet (항상 최신)', description: 'CLI가 자동으로 최신 Sonnet 버전으로 연결' },
-  { value: 'opus',   label: 'Opus (항상 최신)',   description: 'CLI가 자동으로 최신 Opus 버전으로 연결' },
+  { value: 'haiku',  label: 'Haiku (Latest)',  description: 'Always points to the latest Haiku via CLI' },
+  { value: 'sonnet', label: 'Sonnet (Latest)', description: 'Always points to the latest Sonnet via CLI' },
+  { value: 'opus',   label: 'Opus (Latest)',   description: 'Always points to the latest Opus via CLI' },
 ];
 
 /** Extended thinking token budget levels. */

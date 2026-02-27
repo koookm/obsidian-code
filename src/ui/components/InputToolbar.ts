@@ -786,7 +786,7 @@ export class ContextUsageMeter {
     }
 
     // Set tooltip with detailed usage
-    const tooltip = `${this.formatTokens(usage.contextTokens)} / ${this.formatTokens(usage.contextWindow)}`;
+    const tooltip = `Context window: ${this.formatTokens(usage.contextTokens)} / ${this.formatTokens(usage.contextWindow)}`;
     this.container.setAttribute('data-tooltip', tooltip);
   }
 

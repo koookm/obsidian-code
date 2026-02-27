@@ -23172,9 +23172,9 @@ var DEFAULT_CLAUDE_MODELS = [
   { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5", description: "Sonnet \uC774\uC804 \uBC84\uC804" },
   { value: "claude-opus-4-5", label: "Claude Opus 4.5", description: "Opus \uC774\uC804 \uBC84\uC804" },
   // --- CLI 별칭 (항상 최신 버전으로 자동 해석) ---
-  { value: "haiku", label: "Haiku (\uD56D\uC0C1 \uCD5C\uC2E0)", description: "CLI\uAC00 \uC790\uB3D9\uC73C\uB85C \uCD5C\uC2E0 Haiku \uBC84\uC804\uC73C\uB85C \uC5F0\uACB0" },
-  { value: "sonnet", label: "Sonnet (\uD56D\uC0C1 \uCD5C\uC2E0)", description: "CLI\uAC00 \uC790\uB3D9\uC73C\uB85C \uCD5C\uC2E0 Sonnet \uBC84\uC804\uC73C\uB85C \uC5F0\uACB0" },
-  { value: "opus", label: "Opus (\uD56D\uC0C1 \uCD5C\uC2E0)", description: "CLI\uAC00 \uC790\uB3D9\uC73C\uB85C \uCD5C\uC2E0 Opus \uBC84\uC804\uC73C\uB85C \uC5F0\uACB0" }
+  { value: "haiku", label: "Haiku (Latest)", description: "Always points to the latest Haiku via CLI" },
+  { value: "sonnet", label: "Sonnet (Latest)", description: "Always points to the latest Sonnet via CLI" },
+  { value: "opus", label: "Opus (Latest)", description: "Always points to the latest Opus via CLI" }
 ];
 var THINKING_BUDGETS = [
   { value: "off", label: "Off", tokens: 0 },
@@ -29105,7 +29105,7 @@ var ContextUsageMeter = class {
     } else {
       this.container.removeClass("warning");
     }
-    const tooltip = `${this.formatTokens(usage.contextTokens)} / ${this.formatTokens(usage.contextWindow)}`;
+    const tooltip = `Context window: ${this.formatTokens(usage.contextTokens)} / ${this.formatTokens(usage.contextWindow)}`;
     this.container.setAttribute("data-tooltip", tooltip);
   }
   /** Format token count (e.g., 45000 -> "45k", 200000 -> "200k") */
