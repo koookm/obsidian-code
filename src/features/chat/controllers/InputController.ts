@@ -65,7 +65,6 @@ export interface InputControllerDeps {
   setPlanModeActive: (active: boolean) => void;
   getPlanBanner: () => PlanBanner | null;
   generateId: () => string;
-  resetContextMeter: () => void;
 }
 
 interface PlanModeResendPayload {
@@ -1075,9 +1074,8 @@ ${content}
       plugin.agentService.setApprovedPlanContent(planContent);
       // Ignore any further usage updates from the old stream
       state.ignoreUsageUpdates = true;
-      // Clear usage and reset the context meter (fresh session)
+      // Clear usage (fresh session)
       state.usage = null;
-      this.deps.resetContextMeter();
       // Save conversation to clear pending and set approved (sessionId will be null)
       await conversationController.save();
       // Auto-send implementation prompt (hidden from UI)

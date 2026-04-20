@@ -23164,9 +23164,11 @@ async function fetchModelsFromCLI(_cliPath) {
   }
 }
 var DEFAULT_CLAUDE_MODELS = [
-  // --- Claude 4.6 (최신) ---
-  { value: "claude-opus-4-6", label: "Claude Opus 4.6", description: "\uAC00\uC7A5 \uAC15\uB825\uD55C \uBAA8\uB378 \u2014 \uBCF5\uC7A1\uD55C \uC791\uC5C5\uC5D0 \uCD5C\uC801" },
+  // --- Claude 4.7 (최신) ---
+  { value: "claude-opus-4-7", label: "Claude Opus 4.7", description: "\uCD5C\uC2E0 Opus \u2014 \uBCF5\uC7A1\uD55C \uC791\uC5C5\uC5D0 \uCD5C\uC801" },
+  // --- Claude 4.6 ---
   { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", description: "\uC131\uB2A5\uACFC \uC18D\uB3C4\uC758 \uADE0\uD615 \u2014 \uC77C\uBC18 \uC791\uC5C5 \uAD8C\uC7A5" },
+  { value: "claude-opus-4-6", label: "Claude Opus 4.6", description: "Opus \uC774\uC804 \uBC84\uC804" },
   // --- Claude 4.5 ---
   { value: "claude-haiku-4-5", label: "Claude Haiku 4.5", description: "\uBE60\uB974\uACE0 \uAC00\uBCBC\uC6B4 \uBAA8\uB378 \u2014 \uAC04\uB2E8\uD55C \uC791\uC5C5\uC5D0 \uC801\uD569" },
   { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5", description: "Sonnet \uC774\uC804 \uBC84\uC804" },
@@ -23188,6 +23190,8 @@ var DEFAULT_THINKING_BUDGET = {
   "haiku": "off",
   "sonnet": "low",
   "opus": "medium",
+  // Claude 4.7
+  "claude-opus-4-7": "medium",
   // Claude 4.6
   "claude-opus-4-6": "medium",
   "claude-sonnet-4-6": "low",
@@ -29046,84 +29050,13 @@ var McpServerSelector = class {
     }
   }
 };
-var ContextUsageMeter = class {
-  constructor(parentEl) {
-    this.fillPath = null;
-    this.percentEl = null;
-    this.circumference = 0;
-    this.container = parentEl.createDiv({ cls: "oc-context-meter" });
-    this.render();
-    this.container.style.display = "none";
-  }
-  render() {
-    const size = 16;
-    const strokeWidth = 2;
-    const radius = (size - strokeWidth) / 2;
-    const cx = size / 2;
-    const cy = size / 2;
-    const startAngle = 150;
-    const endAngle = 390;
-    const arcDegrees = endAngle - startAngle;
-    const arcRadians = arcDegrees * Math.PI / 180;
-    this.circumference = radius * arcRadians;
-    const startRad = startAngle * Math.PI / 180;
-    const endRad = endAngle * Math.PI / 180;
-    const x1 = cx + radius * Math.cos(startRad);
-    const y1 = cy + radius * Math.sin(startRad);
-    const x2 = cx + radius * Math.cos(endRad);
-    const y2 = cy + radius * Math.sin(endRad);
-    const gaugeEl = this.container.createDiv({ cls: "oc-context-meter-gauge" });
-    gaugeEl.innerHTML = `
-      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-        <path class="oc-meter-bg"
-          d="M ${x1} ${y1} A ${radius} ${radius} 0 1 1 ${x2} ${y2}"
-          fill="none" stroke-width="${strokeWidth}" stroke-linecap="round"/>
-        <path class="oc-meter-fill"
-          d="M ${x1} ${y1} A ${radius} ${radius} 0 1 1 ${x2} ${y2}"
-          fill="none" stroke-width="${strokeWidth}" stroke-linecap="round"
-          stroke-dasharray="${this.circumference}" stroke-dashoffset="${this.circumference}"/>
-      </svg>
-    `;
-    this.fillPath = gaugeEl.querySelector(".oc-meter-fill");
-    this.percentEl = this.container.createSpan({ cls: "oc-context-meter-percent" });
-  }
-  update(usage) {
-    if (!usage) {
-      this.container.style.display = "none";
-      return;
-    }
-    this.container.style.display = "flex";
-    const fillLength = usage.percentage / 100 * this.circumference;
-    if (this.fillPath) {
-      this.fillPath.style.strokeDashoffset = String(this.circumference - fillLength);
-    }
-    if (this.percentEl) {
-      this.percentEl.setText(`${usage.percentage}%`);
-    }
-    if (usage.percentage > 80) {
-      this.container.addClass("warning");
-    } else {
-      this.container.removeClass("warning");
-    }
-    const tooltip = `Context window: ${this.formatTokens(usage.contextTokens)} / ${this.formatTokens(usage.contextWindow)}`;
-    this.container.setAttribute("data-tooltip", tooltip);
-  }
-  /** Format token count (e.g., 45000 -> "45k", 200000 -> "200k") */
-  formatTokens(tokens) {
-    if (tokens >= 1e3) {
-      return `${Math.round(tokens / 1e3)}k`;
-    }
-    return String(tokens);
-  }
-};
 function createInputToolbar(parentEl, callbacks) {
   const modelSelector = new ModelSelector(parentEl, callbacks);
   const thinkingBudgetSelector = new ThinkingBudgetSelector(parentEl, callbacks);
-  const contextUsageMeter = new ContextUsageMeter(parentEl);
   const externalContextSelector = new ExternalContextSelector(parentEl, callbacks);
   const mcpServerSelector = new McpServerSelector(parentEl);
   const permissionToggle = new PermissionToggle(parentEl, callbacks);
-  return { modelSelector, thinkingBudgetSelector, contextUsageMeter, externalContextSelector, mcpServerSelector, permissionToggle };
+  return { modelSelector, thinkingBudgetSelector, externalContextSelector, mcpServerSelector, permissionToggle };
 }
 
 // src/ui/components/InstructionModeManager.ts
@@ -35943,7 +35876,6 @@ ${command}`;
       plugin.agentService.setApprovedPlanContent(planContent);
       state.ignoreUsageUpdates = true;
       state.usage = null;
-      this.deps.resetContextMeter();
       await conversationController.save();
       setTimeout(
         () => this.sendMessage({ hidden: true, content: "Please implement the approved plan." }),
@@ -38111,9 +38043,7 @@ var ChatState = class {
     return this.state.usage;
   }
   set usage(value) {
-    var _a, _b;
     this.state.usage = value;
-    (_b = (_a = this.callbacks).onUsageChanged) == null ? void 0 : _b.call(_a, value);
   }
   get ignoreUsageUpdates() {
     return this.state.ignoreUsageUpdates;
@@ -38251,15 +38181,10 @@ var ObsidianCodeView = class extends import_obsidian25.ItemView {
     this.slashCommandManager = null;
     this.slashCommandDropdown = null;
     this.instructionModeManager = null;
-    this.contextUsageMeter = null;
     this.planBanner = null;
     this.todoPanel = null;
     this.plugin = plugin;
     this.state = new ChatState({
-      onUsageChanged: (usage) => {
-        var _a;
-        return (_a = this.contextUsageMeter) == null ? void 0 : _a.update(usage);
-      },
       onTodosChanged: (todos) => {
         var _a;
         return (_a = this.todoPanel) == null ? void 0 : _a.updateTodos(todos);
@@ -38503,7 +38428,6 @@ var ObsidianCodeView = class extends import_obsidian25.ItemView {
     });
     this.modelSelector = toolbarComponents.modelSelector;
     this.thinkingBudgetSelector = toolbarComponents.thinkingBudgetSelector;
-    this.contextUsageMeter = toolbarComponents.contextUsageMeter;
     this.externalContextSelector = toolbarComponents.externalContextSelector;
     this.mcpServerSelector = toolbarComponents.mcpServerSelector;
     this.permissionToggle = toolbarComponents.permissionToggle;
@@ -38608,11 +38532,7 @@ var ObsidianCodeView = class extends import_obsidian25.ItemView {
         this.updatePlanModeUiState();
       },
       getPlanBanner: () => this.planBanner,
-      generateId: () => this.generateId(),
-      resetContextMeter: () => {
-        var _a2;
-        return (_a2 = this.contextUsageMeter) == null ? void 0 : _a2.update(null);
-      }
+      generateId: () => this.generateId()
     });
     (_a = this.permissionToggle) == null ? void 0 : _a.setOnPlanModeToggle((active) => {
       var _a2;
