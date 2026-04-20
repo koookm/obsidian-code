@@ -14,7 +14,6 @@ import { DEFAULT_CLAUDE_MODELS, DEFAULT_THINKING_BUDGET, VIEW_TYPE_OBSIDIAN_CODE
 import type ObsidianCodePlugin from '../../main';
 import {
   cleanupThinkingBlock,
-  type ContextUsageMeter,
   createInputToolbar,
   type ExternalContextSelector,
   FileContextManager,
@@ -85,7 +84,6 @@ export class ObsidianCodeView extends ItemView {
   private slashCommandManager: SlashCommandManager | null = null;
   private slashCommandDropdown: SlashCommandDropdown | null = null;
   private instructionModeManager: InstructionModeManager | null = null;
-  private contextUsageMeter: ContextUsageMeter | null = null;
   private planBanner: PlanBanner | null = null;
   private todoPanel: TodoPanel | null = null;
 
@@ -93,7 +91,6 @@ export class ObsidianCodeView extends ItemView {
     super(leaf);
     this.plugin = plugin;
     this.state = new ChatState({
-      onUsageChanged: (usage) => this.contextUsageMeter?.update(usage),
       onTodosChanged: (todos) => this.todoPanel?.updateTodos(todos),
     });
     this.asyncSubagentManager = new AsyncSubagentManager(
@@ -375,7 +372,6 @@ export class ObsidianCodeView extends ItemView {
 
     this.modelSelector = toolbarComponents.modelSelector;
     this.thinkingBudgetSelector = toolbarComponents.thinkingBudgetSelector;
-    this.contextUsageMeter = toolbarComponents.contextUsageMeter;
     this.externalContextSelector = toolbarComponents.externalContextSelector;
     this.mcpServerSelector = toolbarComponents.mcpServerSelector;
     this.permissionToggle = toolbarComponents.permissionToggle;
@@ -476,7 +472,6 @@ export class ObsidianCodeView extends ItemView {
       },
       getPlanBanner: () => this.planBanner,
       generateId: () => this.generateId(),
-      resetContextMeter: () => this.contextUsageMeter?.update(null),
     });
 
     this.permissionToggle?.setOnPlanModeToggle((active) => {

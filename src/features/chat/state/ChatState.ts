@@ -220,7 +220,6 @@ export class ChatState {
 
   set usage(value: UsageInfo | null) {
     this.state.usage = value;
-    this.callbacks.onUsageChanged?.(value);
   }
 
   get ignoreUsageUpdates(): boolean {

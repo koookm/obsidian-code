@@ -121,7 +121,6 @@ function createMockDeps(overrides: Partial<InputControllerDeps> = {}): InputCont
     setPlanModeActive: jest.fn(),
     getPlanBanner: () => null,
     generateId: () => `msg-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
-    resetContextMeter: jest.fn(),
     ...overrides,
   };
 }
