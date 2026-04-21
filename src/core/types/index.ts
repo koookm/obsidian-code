@@ -46,6 +46,7 @@ export {
   getDefaultBlockedCommands,
   type InstructionRefineResult,
   type KeyboardNavigationSettings,
+  migrateModel,
   type NonPlanPermissionMode,
   type Permission,
   type PermissionMode,

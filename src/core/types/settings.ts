@@ -196,12 +196,11 @@ export interface InstructionRefineResult {
   error?: string;               // Error message (if failed)
 }
 
-// CLI aliases ('sonnet', 'opus', 'haiku') and full model IDs below 4.6 all migrate to default
+// Preserve CLI aliases and known full IDs; anything else falls back to claude-sonnet-4-6.
 const ALLOWED_MODELS = new Set(DEFAULT_CLAUDE_MODELS.map((m) => m.value));
 const LEGACY_ALIASES = new Set(['sonnet', 'opus', 'haiku']);  // old CLI shorthand
 
-export function migrateModel(saved: string): string {
-  // Keep known good full IDs and legacy aliases that map to a current model
+export function migrateModel(saved: string): ClaudeModel {
   if (ALLOWED_MODELS.has(saved)) return saved;
   if (LEGACY_ALIASES.has(saved)) return saved;  // preserve; plugin resolves alias at runtime
   return 'claude-sonnet-4-6';
