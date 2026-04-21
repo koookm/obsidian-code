@@ -61,11 +61,6 @@ export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; descrip
   { value: 'claude-opus-4-7',   label: 'Claude Opus 4.7',   description: '최신 Opus — 복잡한 작업에 최적' },
   // --- Claude 4.6 ---
   { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', description: '성능과 속도의 균형 — 일반 작업 권장' },
-  { value: 'claude-opus-4-6',   label: 'Claude Opus 4.6',   description: 'Opus 이전 버전' },
-  // --- Claude 4.5 ---
-  { value: 'claude-haiku-4-5',  label: 'Claude Haiku 4.5',  description: '빠르고 가벼운 모델 — 간단한 작업에 적합' },
-  { value: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5', description: 'Sonnet 이전 버전' },
-  { value: 'claude-opus-4-5',   label: 'Claude Opus 4.5',   description: 'Opus 이전 버전' },
   // --- CLI 별칭 (항상 최신 버전으로 자동 해석) ---
   { value: 'haiku',  label: 'Haiku (Latest)',  description: 'Always points to the latest Haiku via CLI' },
   { value: 'sonnet', label: 'Sonnet (Latest)', description: 'Always points to the latest Sonnet via CLI' },
@@ -93,10 +88,5 @@ export const DEFAULT_THINKING_BUDGET: Record<string, ThinkingBudget> = {
   // Claude 4.7
   'claude-opus-4-7': 'medium',
   // Claude 4.6
-  'claude-opus-4-6': 'medium',
   'claude-sonnet-4-6': 'low',
-  // Claude 4.5
-  'claude-haiku-4-5': 'off',
-  'claude-sonnet-4-5': 'low',
-  'claude-opus-4-5': 'medium',
 };
