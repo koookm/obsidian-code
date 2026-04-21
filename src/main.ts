@@ -29,6 +29,10 @@ import { type InlineEditContext, InlineEditModal } from './ui/modals/InlineEditM
 import { ClaudeCliResolver } from './utils/claudeCli';
 import { buildCursorContext } from './utils/editor';
 import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironmentVariables } from './utils/env';
+import {
+  appendMarkdownToFile,
+  formatConversationAsMarkdown,
+} from './utils/noteExport';
 
 /**
  * Main plugin class for ObsidianCode.
@@ -142,6 +146,35 @@ export default class ObsidianCodePlugin extends Plugin {
             new Notice(`Attached: ${activeFile.name}`);
           }
         });
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: 'append-conversation-to-note',
+      name: 'Append conversation to current note',
+      checkCallback: (checking: boolean) => {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile || activeFile.extension !== 'md') return false;
+        const conversation = this.getActiveConversation();
+        if (!conversation || conversation.messages.length === 0) return false;
+
+        if (checking) return true;
+
+        void (async () => {
+          try {
+            const markdown = formatConversationAsMarkdown(conversation);
+            if (!markdown) {
+              new Notice('No messages to append');
+              return;
+            }
+            await appendMarkdownToFile(this.app, activeFile, markdown);
+            new Notice(`Appended conversation to ${activeFile.name}`);
+          } catch (err) {
+            console.error('[ObsidianCode] append-conversation-to-note failed:', err);
+            new Notice('Failed to append conversation — see console');
+          }
+        })();
         return true;
       },
     });
