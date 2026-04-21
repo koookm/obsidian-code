@@ -24,7 +24,7 @@ These two features connect: OMC's `SessionStart` hook injects context into the p
 - **Mobile (Obsidian mobile):** All OMC modules and user hooks are **desktop-only**. Every OMC module entry point gates on `Platform.isDesktop`. On mobile, `OMCDetector` returns `null`, `CLIBridge` and `OMCHUDProvider` are never instantiated, `commandHookAdapter` is disabled. HUD view and meta renderer are hidden.
 - **Model floor:** Only Claude 4.6+ models displayed. Remove `claude-haiku-4-5`, `claude-sonnet-4-5`, `claude-opus-4-5`, `claude-opus-4-6` from `DEFAULT_CLAUDE_MODELS`. Default: `claude-sonnet-4-6`. If a user's saved model is below 4.6, reset to `claude-sonnet-4-6` on settings load.
 - **Approach:** Hybrid C — filesystem integration (B) for daily use; CLI bridge (A) for explicit advanced features (teams, ralph, subagents).
-- **No SDK upgrade required:** The Agent SDK already supports all hook event types (verified at `src/core/agent/ObsidianCodeService.ts:524`).
+- **No SDK upgrade required:** The Agent SDK already supports all hook event types; hook merge point is `src/core/agent/ObsidianCodeService.ts` ~line 523 (`options.hooks = {...}` assignment).
 
 ---
 
@@ -110,7 +110,11 @@ Commands receive a JSON event context on stdin. Output:
 
 **Desktop-only gate:** returns no-op array on `Platform.isMobile`.
 
+All new OMC files must include: `import { Platform } from 'obsidian';`
+
 ```typescript
+import { Platform } from 'obsidian';  // required in every omc/* and hooks/* file
+
 export function createCommandHookExecutor(spec: HookCommandSpec, event: HookEvent) {
   return async (hookInput: unknown): Promise<any> => {
     // Guard: desktop only
@@ -120,9 +124,9 @@ export function createCommandHookExecutor(spec: HookCommandSpec, event: HookEven
       const child = spawn(spec.command, {
         shell: true,
         timeout: Math.min(spec.timeout ?? 60_000, 300_000),
-        cwd: vault.getRoot().path,   // scoped to vault root
+        cwd: app.vault.adapter.basePath,  // absolute vault path (Obsidian API)
         env: {
-          ...scrubSensitiveEnv(process.env),   // strip API keys from child env
+          ...scrubSensitiveEnv(process.env),
           CLAUDE_HOOK_EVENT: event,
           CLAUDE_HOOK_TOOL: extractToolName(hookInput),
         }
@@ -132,11 +136,11 @@ export function createCommandHookExecutor(spec: HookCommandSpec, event: HookEven
   };
 }
 
-// Strip known sensitive keys before passing env to child process
+// Explicit denylist of suffix patterns — strip only known secrets, not PATH or user vars
+const SENSITIVE_SUFFIX = /_(API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH_TOKEN)$/i;
 function scrubSensitiveEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const BLOCKED = /token|key|secret|password|credential|auth/i;
   return Object.fromEntries(
-    Object.entries(env).filter(([k]) => !BLOCKED.test(k))
+    Object.entries(env).filter(([k]) => !SENSITIVE_SUFFIX.test(k))
   );
 }
 ```
@@ -150,7 +154,8 @@ Target: `src/core/agent/ObsidianCodeService.ts` line ~524 — the existing `opti
 Internal hooks (blocklistHook, vaultRestrictionHook, etc.) prepended. User hooks appended. `permissionMode: "plan"` check wired **before** `expandUserHooks()` call so plan mode skips user hooks at the call site, not inside the adapter:
 
 ```typescript
-const userHooks = (this.plugin.settings.enableUserHooks && !this.isInPlanMode() && Platform.isDesktop)
+// this.queryOptions?.planMode reflects current plan mode state (see line ~529 in ObsidianCodeService)
+const userHooks = (this.plugin.settings.enableUserHooks && !this.queryOptions?.planMode && Platform.isDesktop)
   ? expandUserHooks(this.plugin.settings.hooks)
   : {};
 
