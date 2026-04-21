@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-21  
 **Version:** v1.4.26  
-**Status:** Approved (rev 2 — post spec-review corrections)
+**Status:** Approved (rev 3 — post spec-review corrections)
 
 ---
 
@@ -124,7 +124,7 @@ export function createCommandHookExecutor(spec: HookCommandSpec, event: HookEven
       const child = spawn(spec.command, {
         shell: true,
         timeout: Math.min(spec.timeout ?? 60_000, 300_000),
-        cwd: app.vault.adapter.basePath,  // absolute vault path (Obsidian API)
+        cwd: (app.vault.adapter as FileSystemAdapter).basePath,  // requires import { FileSystemAdapter } from 'obsidian'
         env: {
           ...scrubSensitiveEnv(process.env),
           CLAUDE_HOOK_EVENT: event,
@@ -137,6 +137,11 @@ export function createCommandHookExecutor(spec: HookCommandSpec, event: HookEven
 }
 
 // Explicit denylist of suffix patterns — strip only known secrets, not PATH or user vars
+// Extracts tool name from SDK hook input for CLAUDE_HOOK_TOOL env var
+function extractToolName(input: unknown): string {
+  return (input as any)?.tool_name ?? (input as any)?.toolName ?? '';
+}
+
 const SENSITIVE_SUFFIX = /_(API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH_TOKEN)$/i;
 function scrubSensitiveEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(
