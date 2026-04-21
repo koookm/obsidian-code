@@ -23,6 +23,7 @@ import {
 } from './core/types';
 import { fetchModelsFromCLI } from './core/types/models';
 import { ObsidianCodeView } from './features/chat/ObsidianCodeView';
+import { ConversationSummaryService } from './features/chat/services/ConversationSummaryService';
 import { McpService } from './features/mcp/McpService';
 import { ObsidianCodeSettingTab } from './features/settings/ObsidianCodeSettings';
 import { type InlineEditContext, InlineEditModal } from './ui/modals/InlineEditModal';
@@ -32,6 +33,7 @@ import { getCurrentModelFromEnvironment, getModelsFromEnvironment, parseEnvironm
 import {
   appendMarkdownToFile,
   formatConversationAsMarkdown,
+  formatSummaryAsMarkdown,
 } from './utils/noteExport';
 
 /**
@@ -42,6 +44,7 @@ export default class ObsidianCodePlugin extends Plugin {
   settings: ObsidianCodeSettings;
   agentService: ObsidianCodeService;
   mcpService: McpService;
+  conversationSummaryService: ConversationSummaryService;
   storage: StorageService;
   cliResolver: ClaudeCliResolver;
   /** Runtime-cached model list fetched from the Claude CLI (not persisted). */
@@ -78,6 +81,8 @@ export default class ObsidianCodePlugin extends Plugin {
 
     // Initialize agent service with the MCP manager
     this.agentService = new ObsidianCodeService(this, this.mcpService.getManager());
+
+    this.conversationSummaryService = new ConversationSummaryService(this);
 
     this.registerView(
       VIEW_TYPE_OBSIDIAN_CODE,
@@ -179,10 +184,48 @@ export default class ObsidianCodePlugin extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: 'summarize-conversation-to-note',
+      name: 'Summarize conversation to current note',
+      checkCallback: (checking: boolean) => {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile || activeFile.extension !== 'md') return false;
+        const conversation = this.getActiveConversation();
+        if (!conversation || conversation.messages.length === 0) return false;
+
+        if (checking) return true;
+
+        void (async () => {
+          const pendingNotice = new Notice('Summarizing conversation…', 0);
+          try {
+            const result = await this.conversationSummaryService.summarize(conversation);
+            pendingNotice.hide();
+            if (!result.success) {
+              new Notice(`Summarization failed: ${result.error}`);
+              return;
+            }
+            const markdown = formatSummaryAsMarkdown(conversation.title, result.summary);
+            if (!markdown) {
+              new Notice('Empty summary — nothing to append');
+              return;
+            }
+            await appendMarkdownToFile(this.app, activeFile, markdown);
+            new Notice(`Appended summary to ${activeFile.name}`);
+          } catch (err) {
+            pendingNotice.hide();
+            console.error('[ObsidianCode] summarize-conversation-to-note failed:', err);
+            new Notice('Failed to summarize conversation — see console');
+          }
+        })();
+        return true;
+      },
+    });
+
     this.addSettingTab(new ObsidianCodeSettingTab(this.app, this));
   }
 
   onunload() {
+    this.conversationSummaryService?.cancel();
     this.agentService.cleanup();
   }
 

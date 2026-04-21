@@ -23168,11 +23168,6 @@ var DEFAULT_CLAUDE_MODELS = [
   { value: "claude-opus-4-7", label: "Claude Opus 4.7", description: "\uCD5C\uC2E0 Opus \u2014 \uBCF5\uC7A1\uD55C \uC791\uC5C5\uC5D0 \uCD5C\uC801" },
   // --- Claude 4.6 ---
   { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", description: "\uC131\uB2A5\uACFC \uC18D\uB3C4\uC758 \uADE0\uD615 \u2014 \uC77C\uBC18 \uC791\uC5C5 \uAD8C\uC7A5" },
-  { value: "claude-opus-4-6", label: "Claude Opus 4.6", description: "Opus \uC774\uC804 \uBC84\uC804" },
-  // --- Claude 4.5 ---
-  { value: "claude-haiku-4-5", label: "Claude Haiku 4.5", description: "\uBE60\uB974\uACE0 \uAC00\uBCBC\uC6B4 \uBAA8\uB378 \u2014 \uAC04\uB2E8\uD55C \uC791\uC5C5\uC5D0 \uC801\uD569" },
-  { value: "claude-sonnet-4-5", label: "Claude Sonnet 4.5", description: "Sonnet \uC774\uC804 \uBC84\uC804" },
-  { value: "claude-opus-4-5", label: "Claude Opus 4.5", description: "Opus \uC774\uC804 \uBC84\uC804" },
   // --- CLI 별칭 (항상 최신 버전으로 자동 해석) ---
   { value: "haiku", label: "Haiku (Latest)", description: "Always points to the latest Haiku via CLI" },
   { value: "sonnet", label: "Sonnet (Latest)", description: "Always points to the latest Sonnet via CLI" },
@@ -23193,12 +23188,7 @@ var DEFAULT_THINKING_BUDGET = {
   // Claude 4.7
   "claude-opus-4-7": "medium",
   // Claude 4.6
-  "claude-opus-4-6": "medium",
-  "claude-sonnet-4-6": "low",
-  // Claude 4.5
-  "claude-haiku-4-5": "off",
-  "claude-sonnet-4-5": "low",
-  "claude-opus-4-5": "medium"
+  "claude-sonnet-4-6": "low"
 };
 
 // src/core/types/settings.ts
@@ -23290,9 +23280,12 @@ var DEFAULT_SETTINGS = {
   },
   claudeCliPath: "",
   // Empty = auto-detect
-  loadUserClaudeSettings: true
+  loadUserClaudeSettings: true,
   // Default on for compatibility
+  hooks: {},
+  enableUserHooks: true
 };
+var ALLOWED_MODELS = new Set(DEFAULT_CLAUDE_MODELS.map((m) => m.value));
 
 // src/core/types/mcp.ts
 function getMcpServerType(config2) {
@@ -38670,6 +38663,129 @@ var ObsidianCodeView = class extends import_obsidian25.ItemView {
   }
 };
 
+// src/core/prompts/conversationSummary.ts
+var CONVERSATION_SUMMARY_SYSTEM_PROMPT = `You summarize developer-AI chat sessions into concise Markdown notes.
+
+**Input**: A conversation between a user and an AI assistant.
+
+**Output** (Markdown, no surrounding code fences):
+1. One sentence describing the topic or goal of the conversation.
+2. A bulleted list of 3\u20135 concrete decisions, actions, or findings. Each bullet must be a complete, self-contained statement.
+3. (Optional, if relevant) One line labeled "Follow-up:" with remaining work or open questions. Omit if none.
+
+**Rules**:
+- Match the user's language (Korean or English). If the conversation is mixed, use the user's last language.
+- Keep it skimmable \u2014 total under 200 words.
+- Never invent facts not present in the conversation. Skip sections you cannot support from the transcript.
+- No headings (no "#" lines). Plain sentences and bullets only.
+- Return only the summary content \u2014 no preamble, no closing remarks.`;
+
+// src/features/chat/services/ConversationSummaryService.ts
+var MAX_MESSAGES = 40;
+var MAX_CHARS_PER_MESSAGE = 800;
+var ConversationSummaryService = class {
+  constructor(plugin) {
+    this.activeController = null;
+    this.plugin = plugin;
+  }
+  /** Cancels any in-flight summarization. */
+  cancel() {
+    var _a;
+    (_a = this.activeController) == null ? void 0 : _a.abort();
+    this.activeController = null;
+  }
+  /** Generates a summary of the given conversation. */
+  async summarize(conversation) {
+    var _a;
+    const vaultPath = getVaultPath(this.plugin.app);
+    if (!vaultPath) {
+      return { success: false, error: "Could not determine vault path" };
+    }
+    const resolvedClaudePath = this.plugin.getResolvedClaudeCliPath();
+    if (!resolvedClaudePath) {
+      return { success: false, error: "Claude CLI not found" };
+    }
+    const transcript = this.buildTranscript(conversation.messages);
+    if (!transcript) {
+      return { success: false, error: "No messages to summarize" };
+    }
+    const envVars = parseEnvironmentVariables(
+      this.plugin.getActiveEnvironmentVariables()
+    );
+    const summaryModel = this.plugin.settings.titleGenerationModel || envVars.ANTHROPIC_DEFAULT_HAIKU_MODEL || "claude-haiku-4-5";
+    (_a = this.activeController) == null ? void 0 : _a.abort();
+    const abortController = new AbortController();
+    this.activeController = abortController;
+    const options = {
+      cwd: vaultPath,
+      systemPrompt: CONVERSATION_SUMMARY_SYSTEM_PROMPT,
+      model: summaryModel,
+      abortController,
+      pathToClaudeCodeExecutable: resolvedClaudePath,
+      env: {
+        ...process.env,
+        ...envVars,
+        PATH: getEnhancedPath(envVars.PATH, resolvedClaudePath)
+      },
+      allowedTools: [],
+      permissionMode: "bypassPermissions",
+      allowDangerouslySkipPermissions: true
+    };
+    const prompt = `Conversation title: ${conversation.title}
+
+Transcript:
+${transcript}
+
+Summarize the conversation above.`;
+    try {
+      const response = query({ prompt, options });
+      let responseText = "";
+      for await (const message of response) {
+        if (abortController.signal.aborted) {
+          return { success: false, error: "Cancelled" };
+        }
+        const text = this.extractTextFromMessage(message);
+        if (text) responseText += text;
+      }
+      const summary = responseText.trim();
+      if (!summary) {
+        return { success: false, error: "Empty response from model" };
+      }
+      return { success: true, summary };
+    } catch (error2) {
+      if (error2 instanceof Error && error2.name === "AbortError") {
+        return { success: false, error: "Cancelled" };
+      }
+      const msg = error2 instanceof Error ? error2.message : "Unknown error";
+      console.error("[ConversationSummary] Error:", msg);
+      return { success: false, error: msg };
+    } finally {
+      if (this.activeController === abortController) {
+        this.activeController = null;
+      }
+    }
+  }
+  buildTranscript(messages) {
+    const visible = messages.filter((m) => {
+      var _a;
+      return !m.hidden && ((_a = m.displayContent) != null ? _a : m.content).trim();
+    });
+    const recent = visible.slice(-MAX_MESSAGES);
+    return recent.map((m) => {
+      var _a;
+      const label = m.role === "user" ? "User" : "Assistant";
+      const text = ((_a = m.displayContent) != null ? _a : m.content).trim();
+      const truncated = text.length > MAX_CHARS_PER_MESSAGE ? text.slice(0, MAX_CHARS_PER_MESSAGE) + "\u2026" : text;
+      return `${label}: ${truncated}`;
+    }).join("\n\n");
+  }
+  extractTextFromMessage(message) {
+    var _a;
+    if (message.type !== "assistant" || !((_a = message.message) == null ? void 0 : _a.content)) return "";
+    return message.message.content.filter((b) => b.type === "text" && !!b.text).map((b) => b.text).join("");
+  }
+};
+
 // src/core/mcp/McpServerManager.ts
 var McpServerManager = class {
   constructor(storage) {
@@ -39906,6 +40022,54 @@ function resolveClaudeCliPath(customPath, envText) {
   return findClaudeCLIPath(customEnv.PATH);
 }
 
+// src/utils/noteExport.ts
+var CONVERSATION_HEADING_PREFIX = "## Obsidian Code \u2014 ";
+var SUMMARY_HEADING_PREFIX = "## Obsidian Code \uC694\uC57D \u2014 ";
+function messageText(msg) {
+  var _a;
+  const source = (_a = msg.displayContent) != null ? _a : msg.content;
+  return source.trim();
+}
+function renderMessage(msg) {
+  if (msg.hidden) return null;
+  const text = messageText(msg);
+  if (!text) return null;
+  const label = msg.role === "user" ? "**User:**" : "**Assistant:**";
+  return `${label}
+
+${text}`;
+}
+function formatConversationAsMarkdown(conversation) {
+  const blocks = conversation.messages.map(renderMessage).filter((block) => block !== null);
+  if (blocks.length === 0) return "";
+  const heading = `${CONVERSATION_HEADING_PREFIX}${conversation.title}`;
+  return `${heading}
+
+${blocks.join("\n\n")}
+`;
+}
+function formatSummaryAsMarkdown(title, summary) {
+  const trimmed = summary.trim();
+  if (!trimmed) return "";
+  const heading = `${SUMMARY_HEADING_PREFIX}${title}`;
+  return `${heading}
+
+${trimmed}
+`;
+}
+async function appendMarkdownToFile(app, file, markdown) {
+  const existing = await app.vault.read(file);
+  let separator;
+  if (existing.length === 0 || existing.endsWith("\n\n")) {
+    separator = "";
+  } else if (existing.endsWith("\n")) {
+    separator = "\n";
+  } else {
+    separator = "\n\n";
+  }
+  await app.vault.modify(file, existing + separator + markdown);
+}
+
 // src/main.ts
 var ObsidianCodePlugin = class extends import_obsidian28.Plugin {
   constructor() {
@@ -39939,6 +40103,7 @@ var ObsidianCodePlugin = class extends import_obsidian28.Plugin {
     this.mcpService = new McpService(this);
     await this.mcpService.loadServers();
     this.agentService = new ObsidianCodeService(this, this.mcpService.getManager());
+    this.conversationSummaryService = new ConversationSummaryService(this);
     this.registerView(
       VIEW_TYPE_OBSIDIAN_CODE,
       (leaf) => new ObsidianCodeView(leaf, this)
@@ -39998,9 +40163,71 @@ var ObsidianCodePlugin = class extends import_obsidian28.Plugin {
         return true;
       }
     });
+    this.addCommand({
+      id: "append-conversation-to-note",
+      name: "Append conversation to current note",
+      checkCallback: (checking) => {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile || activeFile.extension !== "md") return false;
+        const conversation = this.getActiveConversation();
+        if (!conversation || conversation.messages.length === 0) return false;
+        if (checking) return true;
+        void (async () => {
+          try {
+            const markdown = formatConversationAsMarkdown(conversation);
+            if (!markdown) {
+              new import_obsidian28.Notice("No messages to append");
+              return;
+            }
+            await appendMarkdownToFile(this.app, activeFile, markdown);
+            new import_obsidian28.Notice(`Appended conversation to ${activeFile.name}`);
+          } catch (err) {
+            console.error("[ObsidianCode] append-conversation-to-note failed:", err);
+            new import_obsidian28.Notice("Failed to append conversation \u2014 see console");
+          }
+        })();
+        return true;
+      }
+    });
+    this.addCommand({
+      id: "summarize-conversation-to-note",
+      name: "Summarize conversation to current note",
+      checkCallback: (checking) => {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile || activeFile.extension !== "md") return false;
+        const conversation = this.getActiveConversation();
+        if (!conversation || conversation.messages.length === 0) return false;
+        if (checking) return true;
+        void (async () => {
+          const pendingNotice = new import_obsidian28.Notice("Summarizing conversation\u2026", 0);
+          try {
+            const result = await this.conversationSummaryService.summarize(conversation);
+            pendingNotice.hide();
+            if (!result.success) {
+              new import_obsidian28.Notice(`Summarization failed: ${result.error}`);
+              return;
+            }
+            const markdown = formatSummaryAsMarkdown(conversation.title, result.summary);
+            if (!markdown) {
+              new import_obsidian28.Notice("Empty summary \u2014 nothing to append");
+              return;
+            }
+            await appendMarkdownToFile(this.app, activeFile, markdown);
+            new import_obsidian28.Notice(`Appended summary to ${activeFile.name}`);
+          } catch (err) {
+            pendingNotice.hide();
+            console.error("[ObsidianCode] summarize-conversation-to-note failed:", err);
+            new import_obsidian28.Notice("Failed to summarize conversation \u2014 see console");
+          }
+        })();
+        return true;
+      }
+    });
     this.addSettingTab(new ObsidianCodeSettingTab(this.app, this));
   }
   onunload() {
+    var _a;
+    (_a = this.conversationSummaryService) == null ? void 0 : _a.cancel();
     this.agentService.cleanup();
   }
   /** Opens the ObsidianCode sidebar view, creating it if necessary. */
