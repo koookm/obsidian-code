@@ -3,6 +3,8 @@
  */
 
 import type { ClaudeModel, ThinkingBudget } from './models';
+import { DEFAULT_CLAUDE_MODELS } from './models';
+import type { HooksConfig } from './hooks';
 
 /** Platform-specific blocked commands (Unix). */
 const UNIX_BLOCKED_COMMANDS = [
@@ -149,6 +151,8 @@ export interface ObsidianCodeSettings {
   keyboardNavigation: KeyboardNavigationSettings;
   claudeCliPath: string;  // Custom Claude CLI path (empty = auto-detect)
   loadUserClaudeSettings: boolean;  // Load ~/.claude/settings.json (may override permissions)
+  hooks: HooksConfig;
+  enableUserHooks: boolean;
 }
 
 /** Default plugin settings. */
@@ -180,6 +184,8 @@ export const DEFAULT_SETTINGS: ObsidianCodeSettings = {
   },
   claudeCliPath: '',  // Empty = auto-detect
   loadUserClaudeSettings: true,  // Default on for compatibility
+  hooks: {},
+  enableUserHooks: true,
 };
 
 /** Result from instruction refinement agent query. */
@@ -188,4 +194,15 @@ export interface InstructionRefineResult {
   refinedInstruction?: string;  // The refined instruction text
   clarification?: string;       // Agent's clarifying question (if any)
   error?: string;               // Error message (if failed)
+}
+
+// CLI aliases ('sonnet', 'opus', 'haiku') and full model IDs below 4.6 all migrate to default
+const ALLOWED_MODELS = new Set(DEFAULT_CLAUDE_MODELS.map((m) => m.value));
+const LEGACY_ALIASES = new Set(['sonnet', 'opus', 'haiku']);  // old CLI shorthand
+
+export function migrateModel(saved: string): string {
+  // Keep known good full IDs and legacy aliases that map to a current model
+  if (ALLOWED_MODELS.has(saved)) return saved;
+  if (LEGACY_ALIASES.has(saved)) return saved;  // preserve; plugin resolves alias at runtime
+  return 'claude-sonnet-4-6';
 }

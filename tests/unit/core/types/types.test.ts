@@ -95,6 +95,8 @@ describe('types.ts', () => {
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
         claudeCliPath: '',
         loadUserClaudeSettings: false,
+        hooks: {},
+        enableUserHooks: true,
       };
 
       expect(settings.enableBlocklist).toBe(false);
@@ -123,6 +125,8 @@ describe('types.ts', () => {
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
         claudeCliPath: '',
         loadUserClaudeSettings: false,
+        hooks: {},
+        enableUserHooks: true,
       };
 
       expect(settings.model).toBe('anthropic/custom-model-v1');
@@ -151,6 +155,8 @@ describe('types.ts', () => {
         keyboardNavigation: { scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' },
         claudeCliPath: '',
         loadUserClaudeSettings: false,
+        hooks: {},
+        enableUserHooks: true,
       };
 
       expect(settings.lastClaudeModel).toBe('opus');
