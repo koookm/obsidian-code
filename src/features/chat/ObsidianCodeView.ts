@@ -9,6 +9,11 @@ import type { WorkspaceLeaf } from 'obsidian';
 import { ItemView, setIcon } from 'obsidian';
 
 import { SlashCommandManager } from '../../core/commands';
+import { CLIBridge } from '../../core/omc/CLIBridge';
+import { OMCDetector } from '../../core/omc/OMCDetector';
+import { OMCHUDProvider } from '../../core/omc/OMCHUDProvider';
+import { OMCMCPImporter } from '../../core/omc/OMCMCPImporter';
+import { OMCSkillsLoader } from '../../core/omc/OMCSkillsLoader';
 import type { ClaudeModel, ThinkingBudget } from '../../core/types';
 import { DEFAULT_CLAUDE_MODELS, DEFAULT_THINKING_BUDGET, VIEW_TYPE_OBSIDIAN_CODE } from '../../core/types';
 import type ObsidianCodePlugin from '../../main';
@@ -22,6 +27,7 @@ import {
   InstructionModeManager as InstructionModeManagerClass,
   type McpServerSelector,
   type ModelSelector,
+  OMCHUDView,
   type PermissionToggle,
   PlanBanner,
   SlashCommandDropdown,
@@ -86,6 +92,12 @@ export class ObsidianCodeView extends ItemView {
   private instructionModeManager: InstructionModeManager | null = null;
   private planBanner: PlanBanner | null = null;
   private todoPanel: TodoPanel | null = null;
+
+  // OMC integration (desktop-only, null when OMC not installed)
+  private omcHUDView: OMCHUDView | null = null;
+  private omcHUDProvider: OMCHUDProvider | null = null;
+  private omcSkillsLoader: OMCSkillsLoader | null = null;
+  private omcCLIBridge: CLIBridge | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: ObsidianCodePlugin) {
     super(leaf);
@@ -156,8 +168,64 @@ export class ObsidianCodeView extends ItemView {
     // Start selection polling
     this.selectionController?.start();
 
+    // OMC integration (desktop-only, fails silently if not installed)
+    await this.initOMCIntegration(container);
+
     // Load conversation
     await this.conversationController?.loadActive();
+  }
+
+  private async initOMCIntegration(container: HTMLElement): Promise<void> {
+    try {
+      const omcInstall = await OMCDetector.detect();
+      if (!omcInstall) return;
+
+      // Skills → merge into slash command list
+      if (this.slashCommandManager) {
+        const existing = this.slashCommandManager.getCommands();
+        const existingNames = new Set(existing.map((c) => c.name));
+        this.omcSkillsLoader = new OMCSkillsLoader(omcInstall.pluginRoot);
+        const skills = this.omcSkillsLoader.load(existingNames);
+        if (skills.length > 0) {
+          this.slashCommandManager.setCommands([
+            ...existing,
+            ...skills.map((s) => ({
+              id: `omc-${s.commandName}`,
+              name: s.commandName,
+              description: s.description,
+              content: s.content,
+            })),
+          ]);
+        }
+      }
+
+      // HUD
+      this.omcHUDView = new OMCHUDView(container);
+      this.omcHUDView.show();
+      const vaultPath = getVaultPath(this.plugin.app);
+      if (vaultPath) {
+        this.omcHUDProvider = new OMCHUDProvider(omcInstall, vaultPath);
+        this.omcHUDProvider.on((data) => this.omcHUDView?.update(data));
+        this.omcHUDProvider.start();
+      }
+
+      // CLI bridge (constructed eagerly, used on demand)
+      this.omcCLIBridge = new CLIBridge();
+
+      // Surface MCP candidates (log only; opt-in modal is a later task)
+      const registered = new Set(
+        this.plugin.mcpService.getServers().map((s) => s.name)
+      );
+      const candidates = new OMCMCPImporter().getCandidates(registered);
+      if (candidates.length > 0) {
+        console.log(
+          '[OMC] MCP candidates available:',
+          candidates.map((c) => c.name)
+        );
+      }
+    } catch (err) {
+      console.warn('[OMC] Integration init failed (non-fatal):', err);
+    }
   }
 
   async onClose() {
@@ -189,6 +257,16 @@ export class ObsidianCodeView extends ItemView {
     this.titleGenerationService = null;
     this.todoPanel?.destroy();
     this.todoPanel = null;
+
+    // Cleanup OMC integration (no-ops if OMC was not installed)
+    this.omcHUDProvider?.stop();
+    this.omcHUDProvider = null;
+    this.omcSkillsLoader?.unload();
+    this.omcSkillsLoader = null;
+    this.omcHUDView?.destroy();
+    this.omcHUDView = null;
+    this.omcCLIBridge?.cancel();
+    this.omcCLIBridge = null;
 
     // Cleanup async subagents
     this.asyncSubagentManager.orphanAllActive();

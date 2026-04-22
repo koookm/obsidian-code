@@ -29,6 +29,7 @@ export {
   InstructionModeManager,
   type InstructionModeState,
 } from './InstructionModeManager';
+export { OMCHUDView } from './OMCHUDView';
 export {
   PlanApprovalPanel,
   type PlanApprovalPanelOptions,
