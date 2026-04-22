@@ -22090,6 +22090,10 @@ function resolveCliJsNearPathEntry(entry, isWindows2) {
   }
   return null;
 }
+function resolveClaudeExeNearPathEntry(entry) {
+  const candidate = path.join(entry, "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe");
+  return isExistingFile(candidate) ? candidate : null;
+}
 function resolveCliJsFromPathEntries(entries, isWindows2) {
   for (const entry of entries) {
     const candidate = resolveCliJsNearPathEntry(entry, isWindows2);
@@ -22110,6 +22114,12 @@ function resolveClaudeFromPathEntries(entries, isWindows2) {
   const exeCandidate = findFirstExistingPath(entries, ["claude.exe"]);
   if (exeCandidate) {
     return exeCandidate;
+  }
+  for (const entry of entries) {
+    const nativeExe = resolveClaudeExeNearPathEntry(entry);
+    if (nativeExe) {
+      return nativeExe;
+    }
   }
   const cliJsCandidate = resolveCliJsFromPathEntries(entries, isWindows2);
   if (cliJsCandidate) {
@@ -22182,8 +22192,17 @@ function findClaudeCLIPath(pathValue) {
       path.join(homeDir, "AppData", "Local", "Claude", "claude.exe"),
       path.join(process.env.ProgramFiles || "C:\\Program Files", "Claude", "claude.exe"),
       path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Claude", "claude.exe"),
-      path.join(homeDir, ".local", "bin", "claude.exe")
+      path.join(homeDir, ".local", "bin", "claude.exe"),
+      // npm ships the native exe inside node_modules; the top-level shim
+      // files (claude, claude.cmd) aren't directly spawnable.
+      path.join(homeDir, "AppData", "Roaming", "npm", "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe")
     ];
+    const npmPrefixForExe = getNpmGlobalPrefix();
+    if (npmPrefixForExe) {
+      exePaths.push(
+        path.join(npmPrefixForExe, "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe")
+      );
+    }
     for (const p of exePaths) {
       if (isExistingFile(p)) {
         return p;
