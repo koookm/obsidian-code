@@ -147,6 +147,14 @@ export const MarkdownRenderer = {
 
 export const setIcon = jest.fn();
 
+export const Platform = {
+  isDesktop: true,
+  isMobile: false,
+  isMacOS: false,
+  isWin: false,
+  isLinux: false,
+};
+
 export class Notice {
   constructor(_message: string) {}
 }
