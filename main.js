@@ -22107,7 +22107,7 @@ function resolveClaudeFromPathEntries(entries, isWindows2) {
     const unixCandidate = findFirstExistingPath(entries, ["claude"]);
     return unixCandidate;
   }
-  const exeCandidate = findFirstExistingPath(entries, ["claude.exe", "claude"]);
+  const exeCandidate = findFirstExistingPath(entries, ["claude.exe"]);
   if (exeCandidate) {
     return exeCandidate;
   }
@@ -22196,26 +22196,26 @@ function findClaudeCLIPath(pathValue) {
       }
     }
   }
-  const commonPaths = [
-    // Native binary paths (preferred)
-    path.join(homeDir, ".claude", "local", "claude"),
-    path.join(homeDir, ".local", "bin", "claude"),
-    path.join(homeDir, ".volta", "bin", "claude"),
-    path.join(homeDir, ".asdf", "shims", "claude"),
-    path.join(homeDir, ".asdf", "bin", "claude"),
-    "/usr/local/bin/claude",
-    "/opt/homebrew/bin/claude",
-    path.join(homeDir, "bin", "claude"),
-    // npm global bin symlinks (created by npm install -g)
-    path.join(homeDir, ".npm-global", "bin", "claude")
-  ];
-  const npmPrefix = getNpmGlobalPrefix();
-  if (npmPrefix) {
-    commonPaths.push(path.join(npmPrefix, "bin", "claude"));
-  }
-  for (const p of commonPaths) {
-    if (isExistingFile(p)) {
-      return p;
+  if (!isWindows2) {
+    const commonPaths = [
+      path.join(homeDir, ".claude", "local", "claude"),
+      path.join(homeDir, ".local", "bin", "claude"),
+      path.join(homeDir, ".volta", "bin", "claude"),
+      path.join(homeDir, ".asdf", "shims", "claude"),
+      path.join(homeDir, ".asdf", "bin", "claude"),
+      "/usr/local/bin/claude",
+      "/opt/homebrew/bin/claude",
+      path.join(homeDir, "bin", "claude"),
+      path.join(homeDir, ".npm-global", "bin", "claude")
+    ];
+    const npmPrefix = getNpmGlobalPrefix();
+    if (npmPrefix) {
+      commonPaths.push(path.join(npmPrefix, "bin", "claude"));
+    }
+    for (const p of commonPaths) {
+      if (isExistingFile(p)) {
+        return p;
+      }
     }
   }
   if (!isWindows2) {
