@@ -203,6 +203,14 @@ function resolveCliJsNearPathEntry(entry: string, isWindows: boolean): string | 
   return null;
 }
 
+// Windows-only: the published @anthropic-ai/claude-code package ships the
+// native binary at bin/claude.exe. npm's shim layer (claude, claude.cmd)
+// points to it but can't be spawned directly from Node.
+function resolveClaudeExeNearPathEntry(entry: string): string | null {
+  const candidate = path.join(entry, 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe');
+  return isExistingFile(candidate) ? candidate : null;
+}
+
 function resolveCliJsFromPathEntries(entries: string[], isWindows: boolean): string | null {
   for (const entry of entries) {
     const candidate = resolveCliJsNearPathEntry(entry, isWindows);
@@ -232,6 +240,13 @@ function resolveClaudeFromPathEntries(
   const exeCandidate = findFirstExistingPath(entries, ['claude.exe']);
   if (exeCandidate) {
     return exeCandidate;
+  }
+
+  for (const entry of entries) {
+    const nativeExe = resolveClaudeExeNearPathEntry(entry);
+    if (nativeExe) {
+      return nativeExe;
+    }
   }
 
   const cliJsCandidate = resolveCliJsFromPathEntries(entries, isWindows);
@@ -345,7 +360,17 @@ export function findClaudeCLIPath(pathValue?: string): string | null {
       path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Claude', 'claude.exe'),
       path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Claude', 'claude.exe'),
       path.join(homeDir, '.local', 'bin', 'claude.exe'),
+      // npm ships the native exe inside node_modules; the top-level shim
+      // files (claude, claude.cmd) aren't directly spawnable.
+      path.join(homeDir, 'AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe'),
     ];
+
+    const npmPrefixForExe = getNpmGlobalPrefix();
+    if (npmPrefixForExe) {
+      exePaths.push(
+        path.join(npmPrefixForExe, 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe')
+      );
+    }
 
     for (const p of exePaths) {
       if (isExistingFile(p)) {

@@ -677,6 +677,29 @@ describe('utils.ts', () => {
         expect(findClaudeCLIPath(customPath)).toBeNull();
       });
 
+      it('should find claude.exe inside npm-installed package on Windows', () => {
+        jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
+        const exePath = path.join(
+          'C:\\Users\\test', 'AppData', 'Roaming', 'npm',
+          'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe'
+        );
+        mockExistingFile(exePath);
+
+        expect(findClaudeCLIPath()).toBe(exePath);
+      });
+
+      it('should find bin/claude.exe via PATH npm prefix entry', () => {
+        const npmBin = 'C:\\Users\\test\\AppData\\Roaming\\npm';
+        const exePath = path.join(
+          npmBin, 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe'
+        );
+        // Both the bash shim and the real exe exist; must pick the exe.
+        mockExistingFile(path.join(npmBin, 'claude'), exePath);
+
+        const customPath = `${npmBin};C:\\Windows\\System32`;
+        expect(findClaudeCLIPath(customPath)).toBe(exePath);
+      });
+
       it('should return null when no CLI is found on Windows', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         jest.spyOn(fs, 'existsSync').mockReturnValue(false as any);
