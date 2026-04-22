@@ -5,9 +5,10 @@
  * session persistence, permission modes, and security hooks.
  */
 
-import type { CanUseTool, Options, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
+import type { CanUseTool, HookCallback, HookCallbackMatcher, Options, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 import * as os from 'os';
+import { Platform } from 'obsidian';
 import * as path from 'path';
 
 import type ObsidianCodePlugin from '../../main';
@@ -23,6 +24,7 @@ import {
   type DiffContentEntry,
   type FileEditPostCallback,
 } from '../hooks';
+import { expandUserHooks } from '../hooks/commandHookAdapter';
 import { hydrateImagesData } from '../images/imageLoader';
 import type { McpServerManager } from '../mcp';
 import { buildSystemPrompt } from '../prompts/mainAgent';
@@ -520,9 +522,34 @@ export class ObsidianCodeService {
     // Apply permission mode
     // Always use canUseTool for AskUserQuestion support in both modes
     options.canUseTool = this.createUnifiedToolCallback(permissionMode);
+    const userHooks = (
+      this.plugin.settings.enableUserHooks &&
+      !queryOptions?.planMode &&
+      Platform.isDesktop
+    ) ? expandUserHooks(this.plugin.settings.hooks, this.vaultPath)
+      : {};
+    const wrapUserHooks = (
+      fns: ((input: unknown) => Promise<unknown>)[] | undefined
+    ): HookCallbackMatcher[] =>
+      (fns ?? []).map((fn) => ({ hooks: [fn as HookCallback] }));
+
     options.hooks = {
-      PreToolUse: [blocklistHook, vaultRestrictionHook, fileHashPreHook],
-      PostToolUse: [fileHashPostHook],
+      PreToolUse: [
+        blocklistHook,
+        vaultRestrictionHook,
+        fileHashPreHook,
+        ...wrapUserHooks(userHooks.PreToolUse),
+      ],
+      PostToolUse: [
+        fileHashPostHook,
+        ...wrapUserHooks(userHooks.PostToolUse),
+      ],
+      SessionStart:     wrapUserHooks(userHooks.SessionStart),
+      UserPromptSubmit: wrapUserHooks(userHooks.UserPromptSubmit),
+      Stop:             wrapUserHooks(userHooks.Stop),
+      SubagentStop:     wrapUserHooks(userHooks.SubagentStop),
+      Notification:     wrapUserHooks(userHooks.Notification),
+      PreCompact:       wrapUserHooks(userHooks.PreCompact),
     };
 
     // Set permission mode based on settings or plan mode
