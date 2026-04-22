@@ -658,6 +658,25 @@ describe('utils.ts', () => {
         expect(findClaudeCLIPath()).toBeNull();
       });
 
+      it('should ignore bare "claude" shell shim on Windows (npm global)', () => {
+        jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
+        // npm install -g drops a bash shim with no extension next to claude.cmd;
+        // it exists as a file but cannot be spawned without shell: true.
+        const shimPath = path.join('C:\\Users\\test', 'AppData', 'Roaming', 'npm', 'claude');
+        mockExistingFile(shimPath);
+
+        expect(findClaudeCLIPath()).toBeNull();
+      });
+
+      it('should ignore bare "claude" shell shim when discovered via PATH on Windows', () => {
+        const npmBin = 'C:\\Users\\test\\AppData\\Roaming\\npm';
+        const shimPath = path.join(npmBin, 'claude');
+        mockExistingFile(shimPath);
+
+        const customPath = `${npmBin};C:\\Windows\\System32`;
+        expect(findClaudeCLIPath(customPath)).toBeNull();
+      });
+
       it('should return null when no CLI is found on Windows', () => {
         jest.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
         jest.spyOn(fs, 'existsSync').mockReturnValue(false as any);

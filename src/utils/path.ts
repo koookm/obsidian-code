@@ -226,7 +226,10 @@ function resolveClaudeFromPathEntries(
     return unixCandidate;
   }
 
-  const exeCandidate = findFirstExistingPath(entries, ['claude.exe', 'claude']);
+  // On Windows, only accept claude.exe. A bare "claude" file is npm's
+  // bash shim (shell script) — fs.existsSync returns true, but spawn()
+  // without shell: true fails with ENOENT. Fall through to cli.js instead.
+  const exeCandidate = findFirstExistingPath(entries, ['claude.exe']);
   if (exeCandidate) {
     return exeCandidate;
   }
@@ -359,30 +362,30 @@ export function findClaudeCLIPath(pathValue?: string): string | null {
 
   }
 
-  // Platform-specific search paths for native binaries and npm symlinks
-  const commonPaths: string[] = [
-    // Native binary paths (preferred)
-    path.join(homeDir, '.claude', 'local', 'claude'),
-    path.join(homeDir, '.local', 'bin', 'claude'),
-    path.join(homeDir, '.volta', 'bin', 'claude'),
-    path.join(homeDir, '.asdf', 'shims', 'claude'),
-    path.join(homeDir, '.asdf', 'bin', 'claude'),
-    '/usr/local/bin/claude',
-    '/opt/homebrew/bin/claude',
-    path.join(homeDir, 'bin', 'claude'),
-    // npm global bin symlinks (created by npm install -g)
-    path.join(homeDir, '.npm-global', 'bin', 'claude'),
-  ];
+  // Unix-only: bare "claude" paths are shell scripts/native binaries.
+  // On Windows these would match npm's bash shim (unusable without shell: true).
+  if (!isWindows) {
+    const commonPaths: string[] = [
+      path.join(homeDir, '.claude', 'local', 'claude'),
+      path.join(homeDir, '.local', 'bin', 'claude'),
+      path.join(homeDir, '.volta', 'bin', 'claude'),
+      path.join(homeDir, '.asdf', 'shims', 'claude'),
+      path.join(homeDir, '.asdf', 'bin', 'claude'),
+      '/usr/local/bin/claude',
+      '/opt/homebrew/bin/claude',
+      path.join(homeDir, 'bin', 'claude'),
+      path.join(homeDir, '.npm-global', 'bin', 'claude'),
+    ];
 
-  // Also check npm prefix bin directory
-  const npmPrefix = getNpmGlobalPrefix();
-  if (npmPrefix) {
-    commonPaths.push(path.join(npmPrefix, 'bin', 'claude'));
-  }
+    const npmPrefix = getNpmGlobalPrefix();
+    if (npmPrefix) {
+      commonPaths.push(path.join(npmPrefix, 'bin', 'claude'));
+    }
 
-  for (const p of commonPaths) {
-    if (isExistingFile(p)) {
-      return p;
+    for (const p of commonPaths) {
+      if (isExistingFile(p)) {
+        return p;
+      }
     }
   }
 
