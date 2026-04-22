@@ -1812,6 +1812,41 @@
 
 
 /* ============================================
+   components/omc-hud.css
+   ============================================ */
+.oc-omc-hud {
+  position: sticky;
+  bottom: 0;
+  padding: 2px 8px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  background: var(--background-primary);
+  border-top: 1px solid var(--background-modifier-border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 10;
+}
+.oc-hud-warning { color: var(--color-yellow); }
+.oc-hud-critical { color: var(--color-red); }
+
+/* Message meta badge */
+.oc-message-meta {
+  margin-top: 4px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+}
+.oc-message-meta-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-faint);
+  padding: 0 2px;
+}
+.oc-message-meta-detail { padding-left: 4px; }
+
+
+/* ============================================
    components/input.css
    ============================================ */
 /* Input area */
