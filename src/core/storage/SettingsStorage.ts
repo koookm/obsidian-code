@@ -8,9 +8,14 @@
  * Machine-specific state (lastEnvHash, model tracking) stays in Obsidian's data.json.
  */
 
+import type { HookCommandSpec, HookMatcher, HooksConfig } from '../types/hooks';
+import { HOOK_EVENTS } from '../types/hooks';
 import type { ObsidianCodeSettings, PlatformBlockedCommands } from '../types';
-import { DEFAULT_SETTINGS, getDefaultBlockedCommands } from '../types';
+import { DEFAULT_SETTINGS, getDefaultBlockedCommands, migrateModel } from '../types';
 import type { VaultFileAdapter } from './VaultFileAdapter';
+
+const MIN_HOOK_TIMEOUT_MS = 1_000;
+const MAX_HOOK_TIMEOUT_MS = 300_000;
 
 /** Fields that are machine-specific state or loaded separately. */
 type StateFields =
@@ -34,6 +39,46 @@ function normalizeCommandList(value: unknown, fallback: string[]): string[] {
     .filter((item): item is string => typeof item === 'string')
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
+}
+
+function normalizeHookSpec(raw: unknown): HookCommandSpec | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const h = raw as Record<string, unknown>;
+  if (h.type !== 'command' || typeof h.command !== 'string') return null;
+  const timeout = typeof h.timeout === 'number'
+    ? Math.max(MIN_HOOK_TIMEOUT_MS, Math.min(h.timeout, MAX_HOOK_TIMEOUT_MS))
+    : undefined;
+  return { type: 'command', command: h.command, timeout };
+}
+
+function normalizeHookMatcher(raw: unknown): HookMatcher | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const m = raw as Record<string, unknown>;
+  if (!Array.isArray(m.hooks)) return null;
+  if (typeof m.matcher === 'string') {
+    try { new RegExp(m.matcher); } catch { return null; }
+  }
+  const hooks = m.hooks
+    .map(normalizeHookSpec)
+    .filter((h): h is HookCommandSpec => h !== null);
+  return {
+    matcher: typeof m.matcher === 'string' ? m.matcher : undefined,
+    hooks,
+  };
+}
+
+export function normalizeHooks(value: unknown): HooksConfig {
+  if (!value || typeof value !== 'object') return {};
+  const src = value as Record<string, unknown>;
+  const out: HooksConfig = {};
+  for (const event of HOOK_EVENTS) {
+    const matchers = src[event];
+    if (!Array.isArray(matchers)) continue;
+    out[event] = matchers
+      .map(normalizeHookMatcher)
+      .filter((m): m is HookMatcher => m !== null);
+  }
+  return out;
 }
 
 function normalizeBlockedCommands(value: unknown): PlatformBlockedCommands {
@@ -76,6 +121,11 @@ export class SettingsStorage {
         ...this.getDefaults(),
         ...stored,
         blockedCommands,
+        hooks: normalizeHooks(stored.hooks),
+        enableUserHooks: typeof stored.enableUserHooks === 'boolean'
+          ? stored.enableUserHooks
+          : true,
+        model: migrateModel(typeof stored.model === 'string' ? stored.model : ''),
       } as StoredSettings;
     } catch (error) {
       console.error('[ObsidianCode] Failed to load settings:', error);
