@@ -34,6 +34,7 @@ import {
   updateToolCallResult,
   updateWriteEditWithDiff,
 } from '../../../ui';
+import { MessageMetaRenderer } from '../../../ui/renderers/MessageMetaRenderer';
 import { FLAVOR_TEXTS } from '../constants';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { AsyncSubagentManager } from '../services/AsyncSubagentManager';
@@ -166,6 +167,16 @@ export class StreamController {
         }
         if (!state.ignoreUsageUpdates) {
           state.usage = chunk.usage;
+        }
+        if (state.currentMessageEl && state.streamStartTime > 0) {
+          MessageMetaRenderer.render(state.currentMessageEl, {
+            model: chunk.usage.model ?? plugin.settings.model ?? '',
+            inputTokens: chunk.usage.inputTokens ?? 0,
+            outputTokens: 0,
+            cacheReadTokens: chunk.usage.cacheReadInputTokens,
+            elapsedMs: Date.now() - state.streamStartTime,
+          });
+          state.currentMessageEl = null;
         }
         break;
       }

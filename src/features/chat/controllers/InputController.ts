@@ -279,6 +279,8 @@ export class InputController {
 
     state.toolCallElements.clear();
     state.currentContentEl = contentEl;
+    state.currentMessageEl = msgEl;
+    state.streamStartTime = Date.now();
     state.currentTextEl = null;
     state.currentTextContent = '';
 
@@ -574,6 +576,8 @@ ${content}
 
     state.toolCallElements.clear();
     state.currentContentEl = contentEl;
+    state.currentMessageEl = msgEl;
+    state.streamStartTime = Date.now();
     state.currentTextEl = null;
     state.currentTextContent = '';
 

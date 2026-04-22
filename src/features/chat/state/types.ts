@@ -72,6 +72,8 @@ export interface ChatStateData {
 
   // Active streaming DOM state
   currentContentEl: HTMLElement | null;
+  currentMessageEl: HTMLElement | null;
+  streamStartTime: number;
   currentTextEl: HTMLElement | null;
   currentTextContent: string;
   currentThinkingState: ThinkingBlockState | null;

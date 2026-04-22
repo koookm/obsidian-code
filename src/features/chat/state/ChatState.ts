@@ -29,6 +29,8 @@ function createInitialState(): ChatStateData {
     currentConversationId: null,
     queuedMessage: null,
     currentContentEl: null,
+    currentMessageEl: null,
+    streamStartTime: 0,
     currentTextEl: null,
     currentTextContent: '',
     currentThinkingState: null,
@@ -144,6 +146,22 @@ export class ChatState {
 
   set currentContentEl(value: HTMLElement | null) {
     this.state.currentContentEl = value;
+  }
+
+  get currentMessageEl(): HTMLElement | null {
+    return this.state.currentMessageEl;
+  }
+
+  set currentMessageEl(value: HTMLElement | null) {
+    this.state.currentMessageEl = value;
+  }
+
+  get streamStartTime(): number {
+    return this.state.streamStartTime;
+  }
+
+  set streamStartTime(value: number) {
+    this.state.streamStartTime = value;
   }
 
   get currentTextEl(): HTMLElement | null {
@@ -305,6 +323,8 @@ export class ChatState {
   /** Resets streaming-related state. */
   resetStreamingState(): void {
     this.state.currentContentEl = null;
+    this.state.currentMessageEl = null;
+    this.state.streamStartTime = 0;
     this.state.currentTextEl = null;
     this.state.currentTextContent = '';
     this.state.currentThinkingState = null;
