@@ -8,10 +8,10 @@
  * Machine-specific state (lastEnvHash, model tracking) stays in Obsidian's data.json.
  */
 
-import type { HookCommandSpec, HookMatcher, HooksConfig } from '../types/hooks';
-import { HOOK_EVENTS } from '../types/hooks';
 import type { ObsidianCodeSettings, PlatformBlockedCommands } from '../types';
 import { DEFAULT_SETTINGS, getDefaultBlockedCommands, migrateModel } from '../types';
+import type { HookCommandSpec, HookMatcher, HooksConfig } from '../types/hooks';
+import { HOOK_EVENTS } from '../types/hooks';
 import type { VaultFileAdapter } from './VaultFileAdapter';
 
 const MIN_HOOK_TIMEOUT_MS = 1_000;

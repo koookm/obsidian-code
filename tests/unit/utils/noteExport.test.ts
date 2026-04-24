@@ -4,11 +4,11 @@
  * Covers the pure formatter; file-write is exercised manually in Obsidian.
  */
 
+import type { ChatMessage, Conversation } from '@/core/types';
 import {
   formatConversationAsMarkdown,
   formatSummaryAsMarkdown,
 } from '@/utils/noteExport';
-import type { ChatMessage, Conversation } from '@/core/types';
 
 function makeMessage(
   role: 'user' | 'assistant',

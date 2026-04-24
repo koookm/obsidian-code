@@ -5,7 +5,7 @@
  * No UI or @-mention logic - those belong in features/mcp/.
  */
 
-import type { ObsidianCodeMcpServer, McpServerConfig } from '../types';
+import type { McpServerConfig,ObsidianCodeMcpServer } from '../types';
 
 /** Storage interface for loading MCP servers. */
 export interface McpStorageAdapter {

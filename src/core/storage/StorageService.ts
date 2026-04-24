@@ -14,8 +14,8 @@ import type { App, Plugin } from 'obsidian';
 
 import type {
   ClaudeModel,
-  ObsidianCodeSettings,
   Conversation,
+  ObsidianCodeSettings,
   SlashCommand,
 } from '../types';
 import { DEFAULT_SETTINGS } from '../types';

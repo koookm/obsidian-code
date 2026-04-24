@@ -11,7 +11,6 @@
  */
 
 import * as fs from 'fs';
-
 import { Platform } from 'obsidian';
 import * as path from 'path';
 

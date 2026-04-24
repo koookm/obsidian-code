@@ -7,8 +7,8 @@
 
 import type { CanUseTool, HookCallback, HookCallbackMatcher, Options, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
-import * as os from 'os';
 import { Platform } from 'obsidian';
+import * as os from 'os';
 import * as path from 'path';
 
 import type ObsidianCodePlugin from '../../main';

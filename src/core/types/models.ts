@@ -2,10 +2,6 @@
  * Model type definitions and constants.
  */
 
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-
 /** Model identifier (string to support custom models via environment variables). */
 export type ClaudeModel = string;
 

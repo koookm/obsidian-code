@@ -5,7 +5,7 @@
  * HooksConfig → async-function map expansion.
  */
 
-import { scrubSensitiveEnv, expandUserHooks } from '@/core/hooks/commandHookAdapter';
+import { expandUserHooks,scrubSensitiveEnv } from '@/core/hooks/commandHookAdapter';
 import type { HooksConfig } from '@/core/types/hooks';
 
 describe('scrubSensitiveEnv', () => {

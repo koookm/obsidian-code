@@ -2,8 +2,8 @@
  * ObsidianCode - OMC HUD view
  *
  * Sticky status bar at the bottom of the chat container that renders
- * the latest HUDData from OMCHUDProvider (active skill, context usage,
- * subagent count, ralph progress, todo counts).
+ * the latest HUDData from OMCHUDProvider (model, context usage, effort
+ * level, session cost, active subagents).
  *
  * Desktop-only; `show()` is a no-op on mobile. The host is responsible
  * for subscribing the view's `update` method to the provider.
@@ -41,32 +41,28 @@ export class OMCHUDView {
 
     const sep = () => this.el.createSpan({ text: ' │ ' });
 
-    if (data.skill) {
+    if (data.model) {
       sep();
-      this.el.createSpan({ text: `skill:${data.skill}` });
+      this.el.createSpan({ text: data.model });
     }
-    if (data.contextPercent !== undefined) {
+    if (data.contextPercent !== null) {
       sep();
       const pct = data.contextPercent;
       const cls =
         pct >= 85 ? 'oc-hud-critical' : pct >= 70 ? 'oc-hud-warning' : '';
       this.el.createSpan({ cls, text: `ctx:${pct}%` });
     }
-    if (data.agents !== undefined && data.agents > 0) {
+    if (data.effort) {
       sep();
-      this.el.createSpan({ text: `agents:${data.agents}` });
+      this.el.createSpan({ text: `effort:${data.effort}` });
     }
-    if (data.ralph) {
+    if (data.costUsd !== null) {
       sep();
-      this.el.createSpan({
-        text: `ralph:${data.ralph.current}/${data.ralph.max}`,
-      });
+      this.el.createSpan({ text: `$${data.costUsd.toFixed(2)}` });
     }
-    if (data.todos) {
+    if (data.activeAgents !== null && data.activeAgents > 0) {
       sep();
-      this.el.createSpan({
-        text: `todos:${data.todos.done}/${data.todos.total}`,
-      });
+      this.el.createSpan({ text: `agents:${data.activeAgents}` });
     }
   }
 

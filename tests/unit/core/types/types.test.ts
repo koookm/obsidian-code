@@ -1,9 +1,9 @@
 import type {
   ChatMessage,
-  ObsidianCodeSettings,
   Conversation,
   ConversationMeta,
-  EnvSnippet, StreamChunk,
+  EnvSnippet,   ObsidianCodeSettings,
+StreamChunk,
   ToolCallInfo
 } from '@/core/types';
 import {

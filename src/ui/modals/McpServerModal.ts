@@ -9,12 +9,12 @@ import type { App } from 'obsidian';
 import { Modal, Notice, Setting } from 'obsidian';
 
 import type {
-  ObsidianCodeMcpServer,
   McpHttpServerConfig,
   McpServerConfig,
   McpServerType,
   McpSSEServerConfig,
   McpStdioServerConfig,
+  ObsidianCodeMcpServer,
 } from '../../core/types';
 import { DEFAULT_MCP_SERVER, getMcpServerType } from '../../core/types';
 import type ObsidianCodePlugin from '../../main';

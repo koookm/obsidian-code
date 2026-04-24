@@ -1,10 +1,11 @@
 /**
  * ObsidianCode - OMC HUD provider
  *
- * Polls `<vault>/.omc/state/` for OMC runtime signals (active skill,
- * ralph boulder progress, todo counts) and pushes updates to subscribed
- * listeners. Uses exponential backoff on read failure so a missing or
- * transiently locked state dir can't hot-loop the file system.
+ * Polls `<vault>/.omc/state/` for the real OMC runtime signals
+ * (`hud-stdin-cache.json`, `subagent-tracking.json`) and pushes
+ * updates to subscribed listeners. Uses exponential backoff on read
+ * failure so a missing or transiently locked state dir can't hot-loop
+ * the file system.
  *
  * We read from the vault path rather than `process.cwd()` because on
  * desktop Obsidian the process cwd is the Obsidian binary directory,
@@ -20,17 +21,24 @@ import * as path from 'path';
 import type { OMCInstall } from './OMCDetector';
 
 export interface HUDData {
-  skill: string | null;
-  ralph: { current: number; max: number } | null;
-  todos: { done: number; total: number } | null;
-  contextPercent?: number;
-  agents?: number;
+  model: string | null;
+  contextPercent: number | null;
+  effort: string | null;
+  costUsd: number | null;
+  activeAgents: number | null;
 }
 
 type HUDListener = (data: HUDData) => void;
 
+const EMPTY: HUDData = {
+  model: null,
+  contextPercent: null,
+  effort: null,
+  costUsd: null,
+  activeAgents: null,
+};
+
 export class OMCHUDProvider {
-  private install: Pick<OMCInstall, 'pluginRoot' | 'cliPath'>;
   private vaultPath: string;
   private listeners: HUDListener[] = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -39,67 +47,35 @@ export class OMCHUDProvider {
   private readonly MAX_INTERVAL = 5000;
 
   constructor(
-    install: Pick<OMCInstall, 'pluginRoot' | 'cliPath'>,
+    _install: Pick<OMCInstall, 'pluginRoot' | 'cliPath'>,
     vaultPath: string
   ) {
-    this.install = install;
     this.vaultPath = vaultPath;
   }
 
-  static contextPercent(inputTokens: number, contextWindow: number): number {
-    if (!contextWindow) return 0;
-    return Math.round((inputTokens / contextWindow) * 100);
-  }
-
-  async readStateFiles(): Promise<Pick<HUDData, 'skill' | 'ralph' | 'todos'>> {
+  async readStateFiles(): Promise<HUDData> {
     const stateDir = path.join(this.vaultPath, '.omc', 'state');
-    const result: Pick<HUDData, 'skill' | 'ralph' | 'todos'> = {
-      skill: null,
-      ralph: null,
-      todos: null,
-    };
-    if (!fs.existsSync(stateDir)) return result;
+    if (!fs.existsSync(stateDir)) return { ...EMPTY };
 
-    try {
-      const activeSkillPath = path.join(stateDir, 'active-skill.json');
-      if (fs.existsSync(activeSkillPath)) {
-        const s = JSON.parse(fs.readFileSync(activeSkillPath, 'utf-8')) as {
-          name?: string;
-        };
-        result.skill = s.name ?? null;
-      }
-    } catch {
-      // Ignore malformed state — HUD shows the last known-good value.
+    const result: HUDData = { ...EMPTY };
+
+    const hudCache = readJson(
+      path.join(stateDir, 'hud-stdin-cache.json')
+    ) as HudStdinCache | null;
+    if (hudCache) {
+      result.model = hudCache.model?.display_name ?? null;
+      const pct = hudCache.context_window?.used_percentage;
+      result.contextPercent = typeof pct === 'number' ? pct : null;
+      result.effort = hudCache.effort?.level ?? null;
+      const cost = hudCache.cost?.total_cost_usd;
+      result.costUsd = typeof cost === 'number' ? cost : null;
     }
 
-    try {
-      const ralphPath = path.join(stateDir, 'ralph.json');
-      if (fs.existsSync(ralphPath)) {
-        const r = JSON.parse(fs.readFileSync(ralphPath, 'utf-8')) as {
-          current?: number;
-          max?: number;
-        };
-        if (typeof r.current === 'number' && typeof r.max === 'number') {
-          result.ralph = { current: r.current, max: r.max };
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-
-    try {
-      const todosPath = path.join(stateDir, 'todos.json');
-      if (fs.existsSync(todosPath)) {
-        const t = JSON.parse(fs.readFileSync(todosPath, 'utf-8')) as {
-          done?: number;
-          total?: number;
-        };
-        if (typeof t.done === 'number' && typeof t.total === 'number') {
-          result.todos = { done: t.done, total: t.total };
-        }
-      }
-    } catch {
-      /* ignore */
+    const subagents = readJson(
+      path.join(stateDir, 'subagent-tracking.json')
+    ) as SubagentTracking | null;
+    if (subagents && Array.isArray(subagents.agents)) {
+      result.activeAgents = subagents.agents.length;
     }
 
     return result;
@@ -142,5 +118,25 @@ export class OMCHUDProvider {
       this.timer = null;
     }
     this.listeners = [];
+  }
+}
+
+interface HudStdinCache {
+  model?: { id?: string; display_name?: string };
+  context_window?: { used_percentage?: number };
+  effort?: { level?: string };
+  cost?: { total_cost_usd?: number };
+}
+
+interface SubagentTracking {
+  agents?: unknown[];
+}
+
+function readJson(filePath: string): unknown {
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  } catch {
+    return null;
   }
 }

@@ -18,9 +18,9 @@
  */
 
 import type {
+  McpServerConfig,
   ObsidianCodeMcpConfigFile,
   ObsidianCodeMcpServer,
-  McpServerConfig,
   ParsedMcpConfig,
 } from '../types';
 import { DEFAULT_MCP_SERVER, isValidMcpServerConfig } from '../types';

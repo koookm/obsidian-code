@@ -1,4 +1,4 @@
-import type { HooksConfig, HookCommandSpec } from '@/core/types/hooks';
+import type { HookCommandSpec,HooksConfig } from '@/core/types/hooks';
 
 describe('hooks types', () => {
   it('HooksConfig accepts all valid events', () => {

@@ -78,8 +78,8 @@ describe('ObsidianCodePlugin', () => {
       await plugin.onload();
 
       expect((plugin.addRibbonIcon as jest.Mock)).toHaveBeenCalledWith(
-        'bot',
-        'Open cc-obsidian',
+        'terminal',
+        'Open Obsidian Code',
         expect.any(Function)
       );
     });
@@ -201,7 +201,9 @@ describe('ObsidianCodePlugin', () => {
 
       await plugin.loadSettings();
 
-      expect(plugin.settings).toEqual(DEFAULT_SETTINGS);
+      // State fields (lastClaudeModel/etc.) come from data.json defaults,
+      // which is `'haiku'` — not DEFAULT_SETTINGS.lastClaudeModel.
+      expect(plugin.settings).toEqual({ ...DEFAULT_SETTINGS, lastClaudeModel: 'haiku' });
     });
 
     it('should use defaults when loadData returns empty object', async () => {
@@ -211,7 +213,7 @@ describe('ObsidianCodePlugin', () => {
 
       await plugin.loadSettings();
 
-      expect(plugin.settings).toEqual(DEFAULT_SETTINGS);
+      expect(plugin.settings).toEqual({ ...DEFAULT_SETTINGS, lastClaudeModel: 'haiku' });
     });
 
     it('should reconcile model from environment and persist when changed', async () => {

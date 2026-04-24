@@ -2,9 +2,9 @@
  * Settings type definitions.
  */
 
+import type { HooksConfig } from './hooks';
 import type { ClaudeModel, ThinkingBudget } from './models';
 import { DEFAULT_CLAUDE_MODELS } from './models';
-import type { HooksConfig } from './hooks';
 
 /** Platform-specific blocked commands (Unix). */
 const UNIX_BLOCKED_COMMANDS = [

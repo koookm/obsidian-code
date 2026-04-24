@@ -9,9 +9,8 @@
 
 import { spawn } from 'child_process';
 import * as fs from 'fs';
-import * as os from 'os';
-
 import { Platform } from 'obsidian';
+import * as os from 'os';
 import * as path from 'path';
 
 export interface OMCInstall {

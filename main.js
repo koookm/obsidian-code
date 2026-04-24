@@ -21920,8 +21920,8 @@ function query({
 }
 
 // src/core/agent/ObsidianCodeService.ts
-var os2 = __toESM(require("os"));
 var import_obsidian2 = require("obsidian");
+var os2 = __toESM(require("os"));
 var path7 = __toESM(require("path"));
 
 // src/utils/context.ts
@@ -26341,8 +26341,8 @@ var CLIBridge = class {
 // src/core/omc/OMCDetector.ts
 var import_child_process5 = require("child_process");
 var fs8 = __toESM(require("fs"));
-var os4 = __toESM(require("os"));
 var import_obsidian5 = require("obsidian");
+var os4 = __toESM(require("os"));
 var path9 = __toESM(require("path"));
 var OMCDetector = class _OMCDetector {
   constructor(claudeDir) {
@@ -26390,56 +26390,43 @@ var OMCDetector = class _OMCDetector {
 var fs9 = __toESM(require("fs"));
 var import_obsidian6 = require("obsidian");
 var path10 = __toESM(require("path"));
+var EMPTY = {
+  model: null,
+  contextPercent: null,
+  effort: null,
+  costUsd: null,
+  activeAgents: null
+};
 var OMCHUDProvider = class {
-  constructor(install, vaultPath) {
+  constructor(_install, vaultPath) {
     this.listeners = [];
     this.timer = null;
     this.failCount = 0;
     this.BASE_INTERVAL = 300;
     this.MAX_INTERVAL = 5e3;
-    this.install = install;
     this.vaultPath = vaultPath;
   }
-  static contextPercent(inputTokens, contextWindow) {
-    if (!contextWindow) return 0;
-    return Math.round(inputTokens / contextWindow * 100);
-  }
   async readStateFiles() {
-    var _a;
+    var _a, _b, _c, _d, _e, _f;
     const stateDir = path10.join(this.vaultPath, ".omc", "state");
-    const result = {
-      skill: null,
-      ralph: null,
-      todos: null
-    };
-    if (!fs9.existsSync(stateDir)) return result;
-    try {
-      const activeSkillPath = path10.join(stateDir, "active-skill.json");
-      if (fs9.existsSync(activeSkillPath)) {
-        const s = JSON.parse(fs9.readFileSync(activeSkillPath, "utf-8"));
-        result.skill = (_a = s.name) != null ? _a : null;
-      }
-    } catch (e) {
+    if (!fs9.existsSync(stateDir)) return { ...EMPTY };
+    const result = { ...EMPTY };
+    const hudCache = readJson(
+      path10.join(stateDir, "hud-stdin-cache.json")
+    );
+    if (hudCache) {
+      result.model = (_b = (_a = hudCache.model) == null ? void 0 : _a.display_name) != null ? _b : null;
+      const pct = (_c = hudCache.context_window) == null ? void 0 : _c.used_percentage;
+      result.contextPercent = typeof pct === "number" ? pct : null;
+      result.effort = (_e = (_d = hudCache.effort) == null ? void 0 : _d.level) != null ? _e : null;
+      const cost = (_f = hudCache.cost) == null ? void 0 : _f.total_cost_usd;
+      result.costUsd = typeof cost === "number" ? cost : null;
     }
-    try {
-      const ralphPath = path10.join(stateDir, "ralph.json");
-      if (fs9.existsSync(ralphPath)) {
-        const r = JSON.parse(fs9.readFileSync(ralphPath, "utf-8"));
-        if (typeof r.current === "number" && typeof r.max === "number") {
-          result.ralph = { current: r.current, max: r.max };
-        }
-      }
-    } catch (e) {
-    }
-    try {
-      const todosPath = path10.join(stateDir, "todos.json");
-      if (fs9.existsSync(todosPath)) {
-        const t = JSON.parse(fs9.readFileSync(todosPath, "utf-8"));
-        if (typeof t.done === "number" && typeof t.total === "number") {
-          result.todos = { done: t.done, total: t.total };
-        }
-      }
-    } catch (e) {
+    const subagents = readJson(
+      path10.join(stateDir, "subagent-tracking.json")
+    );
+    if (subagents && Array.isArray(subagents.agents)) {
+      result.activeAgents = subagents.agents.length;
     }
     return result;
   }
@@ -26478,6 +26465,14 @@ var OMCHUDProvider = class {
     this.listeners = [];
   }
 };
+function readJson(filePath) {
+  if (!fs9.existsSync(filePath)) return null;
+  try {
+    return JSON.parse(fs9.readFileSync(filePath, "utf-8"));
+  } catch (e) {
+    return null;
+  }
+}
 
 // src/core/omc/OMCMCPImporter.ts
 var fs10 = __toESM(require("fs"));
@@ -29648,31 +29643,27 @@ var OMCHUDView = class {
     this.el.empty();
     this.el.createSpan({ text: "[OMC]" });
     const sep2 = () => this.el.createSpan({ text: " \u2502 " });
-    if (data.skill) {
+    if (data.model) {
       sep2();
-      this.el.createSpan({ text: `skill:${data.skill}` });
+      this.el.createSpan({ text: data.model });
     }
-    if (data.contextPercent !== void 0) {
+    if (data.contextPercent !== null) {
       sep2();
       const pct = data.contextPercent;
       const cls = pct >= 85 ? "oc-hud-critical" : pct >= 70 ? "oc-hud-warning" : "";
       this.el.createSpan({ cls, text: `ctx:${pct}%` });
     }
-    if (data.agents !== void 0 && data.agents > 0) {
+    if (data.effort) {
       sep2();
-      this.el.createSpan({ text: `agents:${data.agents}` });
+      this.el.createSpan({ text: `effort:${data.effort}` });
     }
-    if (data.ralph) {
+    if (data.costUsd !== null) {
       sep2();
-      this.el.createSpan({
-        text: `ralph:${data.ralph.current}/${data.ralph.max}`
-      });
+      this.el.createSpan({ text: `$${data.costUsd.toFixed(2)}` });
     }
-    if (data.todos) {
+    if (data.activeAgents !== null && data.activeAgents > 0) {
       sep2();
-      this.el.createSpan({
-        text: `todos:${data.todos.done}/${data.todos.total}`
-      });
+      this.el.createSpan({ text: `agents:${data.activeAgents}` });
     }
   }
   destroy() {
@@ -39573,9 +39564,9 @@ var path18 = __toESM(require("path"));
 
 // src/features/skills/ObsidianSkillsInstaller.ts
 var fs13 = __toESM(require("fs"));
+var import_obsidian34 = require("obsidian");
 var os6 = __toESM(require("os"));
 var path17 = __toESM(require("path"));
-var import_obsidian34 = require("obsidian");
 var GLOBAL_SKILLS_PATH = path17.join(os6.homedir(), ".claude", "skills");
 var OBSIDIAN_MARKDOWN_SKILL = `---
 name: obsidian-markdown

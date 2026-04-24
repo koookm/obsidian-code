@@ -12,10 +12,9 @@ import { ObsidianCodeService } from './core/agent/ObsidianCodeService';
 import { deleteCachedImages } from './core/images/imageCache';
 import { StorageService } from './core/storage';
 import type {
-  ObsidianCodeSettings,
   Conversation,
-  ConversationMeta
-} from './core/types';
+  ConversationMeta,
+  ObsidianCodeSettings} from './core/types';
 import {
   DEFAULT_CLAUDE_MODELS,
   DEFAULT_SETTINGS,

@@ -11,11 +11,11 @@ import { ReadableStream } from 'stream/web';
 
 import { MCP_CONFIG_PATH, McpStorage } from '@/core/storage/McpStorage';
 import type {
-  ObsidianCodeMcpServer,
   McpHttpServerConfig,
   McpServerConfig,
   McpSSEServerConfig,
   McpStdioServerConfig,
+  ObsidianCodeMcpServer,
 } from '@/core/types/mcp';
 import {
   DEFAULT_MCP_SERVER,

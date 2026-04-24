@@ -11,7 +11,6 @@
  */
 
 import { spawn } from 'child_process';
-
 import { Platform } from 'obsidian';
 
 import type { HookCommandSpec, HookEvent, HooksConfig } from '../types/hooks';

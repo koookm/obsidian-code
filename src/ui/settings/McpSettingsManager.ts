@@ -8,7 +8,7 @@
 import { Notice, setIcon } from 'obsidian';
 
 import { McpStorage } from '../../core/storage';
-import type { ObsidianCodeMcpServer, McpServerConfig, McpServerType } from '../../core/types';
+import type { McpServerConfig, McpServerType,ObsidianCodeMcpServer } from '../../core/types';
 import { DEFAULT_MCP_SERVER, getMcpServerType } from '../../core/types';
 import { testMcpServer } from '../../features/mcp/McpTester';
 import type ObsidianCodePlugin from '../../main';

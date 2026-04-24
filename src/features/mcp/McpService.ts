@@ -7,7 +7,7 @@
  */
 
 import { McpServerManager } from '../../core/mcp';
-import type { ObsidianCodeMcpServer, McpServerConfig } from '../../core/types';
+import type { McpServerConfig,ObsidianCodeMcpServer } from '../../core/types';
 import type ObsidianCodePlugin from '../../main';
 import { extractMcpMentions, transformMcpMentions } from '../../utils/mcp';
 
