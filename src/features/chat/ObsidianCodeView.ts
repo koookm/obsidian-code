@@ -119,7 +119,7 @@ export class ObsidianCodeView extends ItemView {
   }
 
   getIcon(): string {
-    return 'bot';
+    return 'terminal';
   }
 
   async onOpen() {

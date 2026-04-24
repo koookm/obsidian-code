@@ -38764,7 +38764,7 @@ var ObsidianCodeView = class extends import_obsidian33.ItemView {
     return "Obsidian Code";
   }
   getIcon() {
-    return "bot";
+    return "terminal";
   }
   async onOpen() {
     var _a, _b;
