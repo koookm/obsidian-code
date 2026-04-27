@@ -6,7 +6,7 @@
  */
 
 import type { WorkspaceLeaf } from 'obsidian';
-import { ItemView, setIcon } from 'obsidian';
+import { ItemView, Menu, setIcon } from 'obsidian';
 
 import { SlashCommandManager } from '../../core/commands';
 import { CLIBridge } from '../../core/omc/CLIBridge';
@@ -320,6 +320,27 @@ export class ObsidianCodeView extends ItemView {
     setIcon(newBtn, 'plus');
     newBtn.setAttribute('aria-label', 'New conversation');
     newBtn.addEventListener('click', () => this.conversationController?.createNew());
+
+    // Save to note button
+    const saveBtn = headerActions.createDiv({ cls: 'oc-header-btn' });
+    setIcon(saveBtn, 'file-output');
+    saveBtn.setAttribute('aria-label', 'Save conversation to note');
+    saveBtn.addEventListener('click', (e) => {
+      const menu = new Menu();
+      menu.addItem((item) =>
+        item
+          .setTitle('Append full conversation')
+          .setIcon('file-text')
+          .onClick(() => void this.plugin.appendConversationToNote())
+      );
+      menu.addItem((item) =>
+        item
+          .setTitle('Append summary')
+          .setIcon('sparkles')
+          .onClick(() => void this.plugin.summarizeConversationToNote())
+      );
+      menu.showAtMouseEvent(e);
+    });
   }
 
   private buildInputArea(inputContainerEl: HTMLElement) {

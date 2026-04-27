@@ -162,23 +162,8 @@ export default class ObsidianCodePlugin extends Plugin {
         if (!activeFile || activeFile.extension !== 'md') return false;
         const conversation = this.getActiveConversation();
         if (!conversation || conversation.messages.length === 0) return false;
-
         if (checking) return true;
-
-        void (async () => {
-          try {
-            const markdown = formatConversationAsMarkdown(conversation);
-            if (!markdown) {
-              new Notice('No messages to append');
-              return;
-            }
-            await appendMarkdownToFile(this.app, activeFile, markdown);
-            new Notice(`Appended conversation to ${activeFile.name}`);
-          } catch (err) {
-            console.error('[ObsidianCode] append-conversation-to-note failed:', err);
-            new Notice('Failed to append conversation — see console');
-          }
-        })();
+        void this.appendConversationToNote();
         return true;
       },
     });
@@ -191,31 +176,8 @@ export default class ObsidianCodePlugin extends Plugin {
         if (!activeFile || activeFile.extension !== 'md') return false;
         const conversation = this.getActiveConversation();
         if (!conversation || conversation.messages.length === 0) return false;
-
         if (checking) return true;
-
-        void (async () => {
-          const pendingNotice = new Notice('Summarizing conversation…', 0);
-          try {
-            const result = await this.conversationSummaryService.summarize(conversation);
-            pendingNotice.hide();
-            if (!result.success) {
-              new Notice(`Summarization failed: ${result.error}`);
-              return;
-            }
-            const markdown = formatSummaryAsMarkdown(conversation.title, result.summary);
-            if (!markdown) {
-              new Notice('Empty summary — nothing to append');
-              return;
-            }
-            await appendMarkdownToFile(this.app, activeFile, markdown);
-            new Notice(`Appended summary to ${activeFile.name}`);
-          } catch (err) {
-            pendingNotice.hide();
-            console.error('[ObsidianCode] summarize-conversation-to-note failed:', err);
-            new Notice('Failed to summarize conversation — see console');
-          }
-        })();
+        void this.summarizeConversationToNote();
         return true;
       },
     });
@@ -600,6 +562,66 @@ export default class ObsidianCodePlugin extends Plugin {
       preview: this.getConversationPreview(c),
       titleGenerationStatus: c.titleGenerationStatus,
     }));
+  }
+
+  /** Appends the full active conversation as Markdown to the currently open note. */
+  async appendConversationToNote(): Promise<void> {
+    const activeFile = this.app.workspace.getActiveFile();
+    if (!activeFile || activeFile.extension !== 'md') {
+      new Notice('Open a Markdown note first');
+      return;
+    }
+    const conversation = this.getActiveConversation();
+    if (!conversation || conversation.messages.length === 0) {
+      new Notice('No conversation to append');
+      return;
+    }
+    try {
+      const markdown = formatConversationAsMarkdown(conversation);
+      if (!markdown) {
+        new Notice('No messages to append');
+        return;
+      }
+      await appendMarkdownToFile(this.app, activeFile, markdown);
+      new Notice(`Appended conversation to ${activeFile.name}`);
+    } catch (err) {
+      console.error('[ObsidianCode] append-conversation-to-note failed:', err);
+      new Notice('Failed to append conversation — see console');
+    }
+  }
+
+  /** Summarizes the active conversation and appends the summary to the currently open note. */
+  async summarizeConversationToNote(): Promise<void> {
+    const activeFile = this.app.workspace.getActiveFile();
+    if (!activeFile || activeFile.extension !== 'md') {
+      new Notice('Open a Markdown note first');
+      return;
+    }
+    const conversation = this.getActiveConversation();
+    if (!conversation || conversation.messages.length === 0) {
+      new Notice('No conversation to summarize');
+      return;
+    }
+    const pendingNotice = new Notice('Summarizing conversation…', 0);
+    try {
+      const result = await this.conversationSummaryService.summarize(conversation);
+      pendingNotice.hide();
+      if (!result.success) {
+        new Notice(`Summarization failed: ${result.error}`);
+        return;
+      }
+      const markdown = formatSummaryAsMarkdown(conversation.title, result.summary);
+      if (!markdown) {
+        new Notice('Empty summary — nothing to append');
+        return;
+      }
+      await appendMarkdownToFile(this.app, activeFile, markdown);
+      new Notice(`Appended summary to ${activeFile.name}`);
+    } catch (err) {
+      pendingNotice.hide();
+      console.error('[ObsidianCode] summarize-conversation-to-note failed:', err);
+      new Notice('Failed to summarize conversation — see console');
+    }
   }
 
   /** Returns the active ObsidianCode view from workspace, if open. */

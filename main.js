@@ -38939,6 +38939,19 @@ var ObsidianCodeView = class extends import_obsidian33.ItemView {
       var _a;
       return (_a = this.conversationController) == null ? void 0 : _a.createNew();
     });
+    const saveBtn = headerActions.createDiv({ cls: "oc-header-btn" });
+    (0, import_obsidian33.setIcon)(saveBtn, "file-output");
+    saveBtn.setAttribute("aria-label", "Save conversation to note");
+    saveBtn.addEventListener("click", (e) => {
+      const menu = new import_obsidian33.Menu();
+      menu.addItem(
+        (item) => item.setTitle("Append full conversation").setIcon("file-text").onClick(() => void this.plugin.appendConversationToNote())
+      );
+      menu.addItem(
+        (item) => item.setTitle("Append summary").setIcon("sparkles").onClick(() => void this.plugin.summarizeConversationToNote())
+      );
+      menu.showAtMouseEvent(e);
+    });
   }
   buildInputArea(inputContainerEl) {
     var _a;
@@ -40836,20 +40849,7 @@ var ObsidianCodePlugin = class extends import_obsidian36.Plugin {
         const conversation = this.getActiveConversation();
         if (!conversation || conversation.messages.length === 0) return false;
         if (checking) return true;
-        void (async () => {
-          try {
-            const markdown = formatConversationAsMarkdown(conversation);
-            if (!markdown) {
-              new import_obsidian36.Notice("No messages to append");
-              return;
-            }
-            await appendMarkdownToFile(this.app, activeFile, markdown);
-            new import_obsidian36.Notice(`Appended conversation to ${activeFile.name}`);
-          } catch (err) {
-            console.error("[ObsidianCode] append-conversation-to-note failed:", err);
-            new import_obsidian36.Notice("Failed to append conversation \u2014 see console");
-          }
-        })();
+        void this.appendConversationToNote();
         return true;
       }
     });
@@ -40862,28 +40862,7 @@ var ObsidianCodePlugin = class extends import_obsidian36.Plugin {
         const conversation = this.getActiveConversation();
         if (!conversation || conversation.messages.length === 0) return false;
         if (checking) return true;
-        void (async () => {
-          const pendingNotice = new import_obsidian36.Notice("Summarizing conversation\u2026", 0);
-          try {
-            const result = await this.conversationSummaryService.summarize(conversation);
-            pendingNotice.hide();
-            if (!result.success) {
-              new import_obsidian36.Notice(`Summarization failed: ${result.error}`);
-              return;
-            }
-            const markdown = formatSummaryAsMarkdown(conversation.title, result.summary);
-            if (!markdown) {
-              new import_obsidian36.Notice("Empty summary \u2014 nothing to append");
-              return;
-            }
-            await appendMarkdownToFile(this.app, activeFile, markdown);
-            new import_obsidian36.Notice(`Appended summary to ${activeFile.name}`);
-          } catch (err) {
-            pendingNotice.hide();
-            console.error("[ObsidianCode] summarize-conversation-to-note failed:", err);
-            new import_obsidian36.Notice("Failed to summarize conversation \u2014 see console");
-          }
-        })();
+        void this.summarizeConversationToNote();
         return true;
       }
     });
@@ -41187,6 +41166,64 @@ var ObsidianCodePlugin = class extends import_obsidian36.Plugin {
       preview: this.getConversationPreview(c),
       titleGenerationStatus: c.titleGenerationStatus
     }));
+  }
+  /** Appends the full active conversation as Markdown to the currently open note. */
+  async appendConversationToNote() {
+    const activeFile = this.app.workspace.getActiveFile();
+    if (!activeFile || activeFile.extension !== "md") {
+      new import_obsidian36.Notice("Open a Markdown note first");
+      return;
+    }
+    const conversation = this.getActiveConversation();
+    if (!conversation || conversation.messages.length === 0) {
+      new import_obsidian36.Notice("No conversation to append");
+      return;
+    }
+    try {
+      const markdown = formatConversationAsMarkdown(conversation);
+      if (!markdown) {
+        new import_obsidian36.Notice("No messages to append");
+        return;
+      }
+      await appendMarkdownToFile(this.app, activeFile, markdown);
+      new import_obsidian36.Notice(`Appended conversation to ${activeFile.name}`);
+    } catch (err) {
+      console.error("[ObsidianCode] append-conversation-to-note failed:", err);
+      new import_obsidian36.Notice("Failed to append conversation \u2014 see console");
+    }
+  }
+  /** Summarizes the active conversation and appends the summary to the currently open note. */
+  async summarizeConversationToNote() {
+    const activeFile = this.app.workspace.getActiveFile();
+    if (!activeFile || activeFile.extension !== "md") {
+      new import_obsidian36.Notice("Open a Markdown note first");
+      return;
+    }
+    const conversation = this.getActiveConversation();
+    if (!conversation || conversation.messages.length === 0) {
+      new import_obsidian36.Notice("No conversation to summarize");
+      return;
+    }
+    const pendingNotice = new import_obsidian36.Notice("Summarizing conversation\u2026", 0);
+    try {
+      const result = await this.conversationSummaryService.summarize(conversation);
+      pendingNotice.hide();
+      if (!result.success) {
+        new import_obsidian36.Notice(`Summarization failed: ${result.error}`);
+        return;
+      }
+      const markdown = formatSummaryAsMarkdown(conversation.title, result.summary);
+      if (!markdown) {
+        new import_obsidian36.Notice("Empty summary \u2014 nothing to append");
+        return;
+      }
+      await appendMarkdownToFile(this.app, activeFile, markdown);
+      new import_obsidian36.Notice(`Appended summary to ${activeFile.name}`);
+    } catch (err) {
+      pendingNotice.hide();
+      console.error("[ObsidianCode] summarize-conversation-to-note failed:", err);
+      new import_obsidian36.Notice("Failed to summarize conversation \u2014 see console");
+    }
   }
   /** Returns the active ObsidianCode view from workspace, if open. */
   getView() {
