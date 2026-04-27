@@ -26391,6 +26391,7 @@ var fs9 = __toESM(require("fs"));
 var import_obsidian6 = require("obsidian");
 var path10 = __toESM(require("path"));
 var EMPTY = {
+  version: null,
   model: null,
   contextPercent: null,
   effort: null,
@@ -26398,29 +26399,46 @@ var EMPTY = {
   activeAgents: null
 };
 var OMCHUDProvider = class {
-  constructor(_install, vaultPath) {
+  constructor(install, vaultPath) {
+    this.sdkData = { model: null, contextPercent: null };
     this.listeners = [];
     this.timer = null;
     this.failCount = 0;
     this.BASE_INTERVAL = 300;
     this.MAX_INTERVAL = 5e3;
+    var _a;
     this.vaultPath = vaultPath;
+    this.version = (_a = install.version) != null ? _a : null;
+  }
+  /** Push live SDK data (model name, context %). Notifies listeners immediately. */
+  push(data) {
+    this.sdkData = { ...this.sdkData, ...data };
+    void this.notifyAll();
+  }
+  async notifyAll() {
+    try {
+      const data = await this.readStateFiles();
+      for (const l of this.listeners) l(data);
+    } catch (e) {
+    }
   }
   async readStateFiles() {
     var _a, _b, _c, _d, _e, _f;
+    const result = { ...EMPTY, ...this.sdkData, version: this.version };
     const stateDir = path10.join(this.vaultPath, ".omc", "state");
-    if (!fs9.existsSync(stateDir)) return { ...EMPTY };
-    const result = { ...EMPTY };
+    if (!fs9.existsSync(stateDir)) return result;
     const hudCache = readJson(
       path10.join(stateDir, "hud-stdin-cache.json")
     );
     if (hudCache) {
-      result.model = (_b = (_a = hudCache.model) == null ? void 0 : _a.display_name) != null ? _b : null;
+      const fileModel = (_b = (_a = hudCache.model) == null ? void 0 : _a.display_name) != null ? _b : null;
+      if (fileModel !== null) result.model = fileModel;
       const pct = (_c = hudCache.context_window) == null ? void 0 : _c.used_percentage;
-      result.contextPercent = typeof pct === "number" ? pct : null;
-      result.effort = (_e = (_d = hudCache.effort) == null ? void 0 : _d.level) != null ? _e : null;
+      if (typeof pct === "number") result.contextPercent = pct;
+      const fileEffort = (_e = (_d = hudCache.effort) == null ? void 0 : _d.level) != null ? _e : null;
+      if (fileEffort !== null) result.effort = fileEffort;
       const cost = (_f = hudCache.cost) == null ? void 0 : _f.total_cost_usd;
-      result.costUsd = typeof cost === "number" ? cost : null;
+      if (typeof cost === "number") result.costUsd = cost;
     }
     const subagents = readJson(
       path10.join(stateDir, "subagent-tracking.json")
@@ -29641,7 +29659,8 @@ var OMCHUDView = class {
   update(data) {
     if (!this.visible) return;
     this.el.empty();
-    this.el.createSpan({ text: "[OMC]" });
+    const label = data.version ? `OMC v${data.version}` : "OMC";
+    this.el.createSpan({ text: `[${label}]` });
     const sep2 = () => this.el.createSpan({ text: " \u2502 " });
     if (data.model) {
       sep2();
@@ -29664,6 +29683,11 @@ var OMCHUDView = class {
     if (data.activeAgents !== null && data.activeAgents > 0) {
       sep2();
       this.el.createSpan({ text: `agents:${data.activeAgents}` });
+    }
+    const hasSessionData = data.model !== null || data.contextPercent !== null || data.costUsd !== null;
+    if (!hasSessionData) {
+      sep2();
+      this.el.createSpan({ cls: "oc-hud-idle", text: "idle" });
     }
   }
   destroy() {
@@ -36720,7 +36744,7 @@ var StreamController = class {
   // ============================================
   /** Processes a stream chunk and updates the message. */
   async handleStreamChunk(chunk, msg) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e, _f, _g;
     const { state, plugin } = this.deps;
     if ("parentToolUseId" in chunk && chunk.parentToolUseId) {
       await this.handleSubagentChunk(chunk, msg);
@@ -36811,6 +36835,7 @@ var StreamController = class {
           });
           state.currentMessageEl = null;
         }
+        (_g = (_f = this.deps).onUsage) == null ? void 0 : _g.call(_f, (_e = chunk.usage.model) != null ? _e : null, chunk.usage.percentage);
         break;
       }
     }
@@ -38817,7 +38842,6 @@ var ObsidianCodeView = class extends import_obsidian33.ItemView {
         }
       }
       this.omcHUDView = new OMCHUDView(container);
-      this.omcHUDView.show();
       const vaultPath = getVaultPath(this.plugin.app);
       if (vaultPath) {
         this.omcHUDProvider = new OMCHUDProvider(omcInstall, vaultPath);
@@ -38826,6 +38850,11 @@ var ObsidianCodeView = class extends import_obsidian33.ItemView {
           return (_a = this.omcHUDView) == null ? void 0 : _a.update(data);
         });
         this.omcHUDProvider.start();
+        const initial = await this.omcHUDProvider.readStateFiles();
+        this.omcHUDView.show();
+        this.omcHUDView.update(initial);
+      } else {
+        this.omcHUDView.show();
       }
       this.omcCLIBridge = new CLIBridge();
       const registered = new Set(
@@ -39080,6 +39109,10 @@ var ObsidianCodeView = class extends import_obsidian33.ItemView {
       },
       setPlanModeActive: (_active) => {
         this.updatePlanModeUiState();
+      },
+      onUsage: (model, contextPercent) => {
+        var _a2;
+        (_a2 = this.omcHUDProvider) == null ? void 0 : _a2.push({ model, contextPercent });
       }
     });
     this.conversationController = new ConversationController(
