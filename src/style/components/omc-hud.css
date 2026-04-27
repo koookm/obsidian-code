@@ -13,6 +13,7 @@
 }
 .oc-hud-warning { color: var(--color-yellow); }
 .oc-hud-critical { color: var(--color-red); }
+.oc-hud-idle { color: var(--text-faint); }
 
 /* Message meta badge */
 .oc-message-meta {

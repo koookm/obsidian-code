@@ -51,6 +51,8 @@ export interface StreamControllerDeps {
   updateQueueIndicator: () => void;
   /** Callback to set plan mode active (for UI toggle sync). */
   setPlanModeActive: (active: boolean) => void;
+  /** Optional callback to relay model/context data to the OMC HUD after each response. */
+  onUsage?: (model: string | null, contextPercent: number) => void;
 }
 
 /**
@@ -178,6 +180,7 @@ export class StreamController {
           });
           state.currentMessageEl = null;
         }
+        this.deps.onUsage?.(chunk.usage.model ?? null, chunk.usage.percentage);
         break;
       }
     }

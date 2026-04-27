@@ -201,12 +201,17 @@ export class ObsidianCodeView extends ItemView {
 
       // HUD
       this.omcHUDView = new OMCHUDView(container);
-      this.omcHUDView.show();
       const vaultPath = getVaultPath(this.plugin.app);
       if (vaultPath) {
         this.omcHUDProvider = new OMCHUDProvider(omcInstall, vaultPath);
         this.omcHUDProvider.on((data) => this.omcHUDView?.update(data));
         this.omcHUDProvider.start();
+        // Render immediately so version shows before the first poll fires
+        const initial = await this.omcHUDProvider.readStateFiles();
+        this.omcHUDView.show();
+        this.omcHUDView.update(initial);
+      } else {
+        this.omcHUDView.show();
       }
 
       // CLI bridge (constructed eagerly, used on demand)
@@ -491,6 +496,9 @@ export class ObsidianCodeView extends ItemView {
       updateQueueIndicator: () => this.inputController?.updateQueueIndicator(),
       setPlanModeActive: (_active) => {
         this.updatePlanModeUiState();
+      },
+      onUsage: (model, contextPercent) => {
+        this.omcHUDProvider?.push({ model, contextPercent });
       },
     });
 

@@ -37,7 +37,9 @@ export class OMCHUDView {
   update(data: HUDData): void {
     if (!this.visible) return;
     this.el.empty();
-    this.el.createSpan({ text: '[OMC]' });
+
+    const label = data.version ? `OMC v${data.version}` : 'OMC';
+    this.el.createSpan({ text: `[${label}]` });
 
     const sep = () => this.el.createSpan({ text: ' │ ' });
 
@@ -63,6 +65,13 @@ export class OMCHUDView {
     if (data.activeAgents !== null && data.activeAgents > 0) {
       sep();
       this.el.createSpan({ text: `agents:${data.activeAgents}` });
+    }
+
+    const hasSessionData =
+      data.model !== null || data.contextPercent !== null || data.costUsd !== null;
+    if (!hasSessionData) {
+      sep();
+      this.el.createSpan({ cls: 'oc-hud-idle', text: 'idle' });
     }
   }
 

@@ -21,6 +21,7 @@ import * as path from 'path';
 import type { OMCInstall } from './OMCDetector';
 
 export interface HUDData {
+  version: string | null;
   model: string | null;
   contextPercent: number | null;
   effort: string | null;
@@ -31,6 +32,7 @@ export interface HUDData {
 type HUDListener = (data: HUDData) => void;
 
 const EMPTY: HUDData = {
+  version: null,
   model: null,
   contextPercent: null,
   effort: null,
@@ -40,6 +42,8 @@ const EMPTY: HUDData = {
 
 export class OMCHUDProvider {
   private vaultPath: string;
+  private version: string | null;
+  private sdkData: Pick<HUDData, 'model' | 'contextPercent'> = { model: null, contextPercent: null };
   private listeners: HUDListener[] = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
   private failCount = 0;
@@ -47,28 +51,48 @@ export class OMCHUDProvider {
   private readonly MAX_INTERVAL = 5000;
 
   constructor(
-    _install: Pick<OMCInstall, 'pluginRoot' | 'cliPath'>,
+    install: Pick<OMCInstall, 'pluginRoot' | 'cliPath' | 'version'>,
     vaultPath: string
   ) {
     this.vaultPath = vaultPath;
+    this.version = install.version ?? null;
+  }
+
+  /** Push live SDK data (model name, context %). Notifies listeners immediately. */
+  push(data: Pick<HUDData, 'model' | 'contextPercent'>): void {
+    this.sdkData = { ...this.sdkData, ...data };
+    void this.notifyAll();
+  }
+
+  private async notifyAll(): Promise<void> {
+    try {
+      const data = await this.readStateFiles();
+      for (const l of this.listeners) l(data);
+    } catch {
+      // ignore
+    }
   }
 
   async readStateFiles(): Promise<HUDData> {
-    const stateDir = path.join(this.vaultPath, '.omc', 'state');
-    if (!fs.existsSync(stateDir)) return { ...EMPTY };
+    // SDK data is the baseline; version always comes from install
+    const result: HUDData = { ...EMPTY, ...this.sdkData, version: this.version };
 
-    const result: HUDData = { ...EMPTY };
+    const stateDir = path.join(this.vaultPath, '.omc', 'state');
+    if (!fs.existsSync(stateDir)) return result;
 
     const hudCache = readJson(
       path.join(stateDir, 'hud-stdin-cache.json')
     ) as HudStdinCache | null;
     if (hudCache) {
-      result.model = hudCache.model?.display_name ?? null;
+      // State-file values win over SDK data; only write when the file has a value
+      const fileModel = hudCache.model?.display_name ?? null;
+      if (fileModel !== null) result.model = fileModel;
       const pct = hudCache.context_window?.used_percentage;
-      result.contextPercent = typeof pct === 'number' ? pct : null;
-      result.effort = hudCache.effort?.level ?? null;
+      if (typeof pct === 'number') result.contextPercent = pct;
+      const fileEffort = hudCache.effort?.level ?? null;
+      if (fileEffort !== null) result.effort = fileEffort;
       const cost = hudCache.cost?.total_cost_usd;
-      result.costUsd = typeof cost === 'number' ? cost : null;
+      if (typeof cost === 'number') result.costUsd = cost;
     }
 
     const subagents = readJson(
