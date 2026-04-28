@@ -624,6 +624,27 @@ export default class ObsidianCodePlugin extends Plugin {
     }
   }
 
+  /** Copies the active conversation as Markdown to the system clipboard. */
+  async copyConversationToClipboard(): Promise<void> {
+    const conversation = this.getActiveConversation();
+    if (!conversation || conversation.messages.length === 0) {
+      new Notice('No conversation to copy');
+      return;
+    }
+    try {
+      const markdown = formatConversationAsMarkdown(conversation);
+      if (!markdown) {
+        new Notice('No messages to copy');
+        return;
+      }
+      await navigator.clipboard.writeText(markdown);
+      new Notice('Conversation copied to clipboard');
+    } catch (err) {
+      console.error('[ObsidianCode] copy-conversation-to-clipboard failed:', err);
+      new Notice('Failed to copy to clipboard — see console');
+    }
+  }
+
   /** Returns the active ObsidianCode view from workspace, if open. */
   getView(): ObsidianCodeView | null {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_OBSIDIAN_CODE);

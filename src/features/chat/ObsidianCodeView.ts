@@ -321,26 +321,6 @@ export class ObsidianCodeView extends ItemView {
     newBtn.setAttribute('aria-label', 'New conversation');
     newBtn.addEventListener('click', () => this.conversationController?.createNew());
 
-    // Save to note button
-    const saveBtn = headerActions.createDiv({ cls: 'oc-header-btn' });
-    setIcon(saveBtn, 'file-output');
-    saveBtn.setAttribute('aria-label', 'Save conversation to note');
-    saveBtn.addEventListener('click', (e) => {
-      const menu = new Menu();
-      menu.addItem((item) =>
-        item
-          .setTitle('Append full conversation')
-          .setIcon('file-text')
-          .onClick(() => void this.plugin.appendConversationToNote())
-      );
-      menu.addItem((item) =>
-        item
-          .setTitle('Append summary')
-          .setIcon('sparkles')
-          .onClick(() => void this.plugin.summarizeConversationToNote())
-      );
-      menu.showAtMouseEvent(e);
-    });
   }
 
   private buildInputArea(inputContainerEl: HTMLElement) {
@@ -491,6 +471,33 @@ export class ObsidianCodeView extends ItemView {
     // Wire external context changes to pre-scan files
     this.externalContextSelector.setOnChange(() => {
       this.fileContextManager?.preScanExternalContexts();
+    });
+
+    // Save to note button (right side of toolbar)
+    const saveBtn = inputToolbar.createDiv({ cls: 'oc-header-btn' });
+    setIcon(saveBtn, 'file-output');
+    saveBtn.setAttribute('aria-label', 'Save conversation to note');
+    saveBtn.addEventListener('click', (e) => {
+      const menu = new Menu();
+      menu.addItem((item) =>
+        item
+          .setTitle('Append full conversation')
+          .setIcon('file-text')
+          .onClick(() => void this.plugin.appendConversationToNote())
+      );
+      menu.addItem((item) =>
+        item
+          .setTitle('Append summary')
+          .setIcon('sparkles')
+          .onClick(() => void this.plugin.summarizeConversationToNote())
+      );
+      menu.addItem((item) =>
+        item
+          .setTitle('Copy to clipboard')
+          .setIcon('clipboard-copy')
+          .onClick(() => void this.plugin.copyConversationToClipboard())
+      );
+      menu.showAtMouseEvent(e);
     });
   }
 

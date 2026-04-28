@@ -38939,19 +38939,6 @@ var ObsidianCodeView = class extends import_obsidian33.ItemView {
       var _a;
       return (_a = this.conversationController) == null ? void 0 : _a.createNew();
     });
-    const saveBtn = headerActions.createDiv({ cls: "oc-header-btn" });
-    (0, import_obsidian33.setIcon)(saveBtn, "file-output");
-    saveBtn.setAttribute("aria-label", "Save conversation to note");
-    saveBtn.addEventListener("click", (e) => {
-      const menu = new import_obsidian33.Menu();
-      menu.addItem(
-        (item) => item.setTitle("Append full conversation").setIcon("file-text").onClick(() => void this.plugin.appendConversationToNote())
-      );
-      menu.addItem(
-        (item) => item.setTitle("Append summary").setIcon("sparkles").onClick(() => void this.plugin.summarizeConversationToNote())
-      );
-      menu.showAtMouseEvent(e);
-    });
   }
   buildInputArea(inputContainerEl) {
     var _a;
@@ -39097,6 +39084,22 @@ var ObsidianCodeView = class extends import_obsidian33.ItemView {
     this.externalContextSelector.setOnChange(() => {
       var _a2;
       (_a2 = this.fileContextManager) == null ? void 0 : _a2.preScanExternalContexts();
+    });
+    const saveBtn = inputToolbar.createDiv({ cls: "oc-header-btn" });
+    (0, import_obsidian33.setIcon)(saveBtn, "file-output");
+    saveBtn.setAttribute("aria-label", "Save conversation to note");
+    saveBtn.addEventListener("click", (e) => {
+      const menu = new import_obsidian33.Menu();
+      menu.addItem(
+        (item) => item.setTitle("Append full conversation").setIcon("file-text").onClick(() => void this.plugin.appendConversationToNote())
+      );
+      menu.addItem(
+        (item) => item.setTitle("Append summary").setIcon("sparkles").onClick(() => void this.plugin.summarizeConversationToNote())
+      );
+      menu.addItem(
+        (item) => item.setTitle("Copy to clipboard").setIcon("clipboard-copy").onClick(() => void this.plugin.copyConversationToClipboard())
+      );
+      menu.showAtMouseEvent(e);
     });
   }
   // ============================================
@@ -41223,6 +41226,26 @@ var ObsidianCodePlugin = class extends import_obsidian36.Plugin {
       pendingNotice.hide();
       console.error("[ObsidianCode] summarize-conversation-to-note failed:", err);
       new import_obsidian36.Notice("Failed to summarize conversation \u2014 see console");
+    }
+  }
+  /** Copies the active conversation as Markdown to the system clipboard. */
+  async copyConversationToClipboard() {
+    const conversation = this.getActiveConversation();
+    if (!conversation || conversation.messages.length === 0) {
+      new import_obsidian36.Notice("No conversation to copy");
+      return;
+    }
+    try {
+      const markdown = formatConversationAsMarkdown(conversation);
+      if (!markdown) {
+        new import_obsidian36.Notice("No messages to copy");
+        return;
+      }
+      await navigator.clipboard.writeText(markdown);
+      new import_obsidian36.Notice("Conversation copied to clipboard");
+    } catch (err) {
+      console.error("[ObsidianCode] copy-conversation-to-clipboard failed:", err);
+      new import_obsidian36.Notice("Failed to copy to clipboard \u2014 see console");
     }
   }
   /** Returns the active ObsidianCode view from workspace, if open. */
