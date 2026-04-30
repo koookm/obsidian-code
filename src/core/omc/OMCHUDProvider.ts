@@ -27,6 +27,9 @@ export interface HUDData {
   effort: string | null;
   costUsd: number | null;
   activeAgents: number | null;
+  fiveHourPercent: number | null;
+  sevenDayPercent: number | null;
+  skillsCount: number | null;
 }
 
 type HUDListener = (data: HUDData) => void;
@@ -38,12 +41,16 @@ const EMPTY: HUDData = {
   effort: null,
   costUsd: null,
   activeAgents: null,
+  fiveHourPercent: null,
+  sevenDayPercent: null,
+  skillsCount: null,
 };
 
 export class OMCHUDProvider {
   private vaultPath: string;
   private version: string | null;
   private sdkData: Pick<HUDData, 'model' | 'contextPercent'> = { model: null, contextPercent: null };
+  private skillsCount: number | null = null;
   private listeners: HUDListener[] = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
   private failCount = 0;
@@ -73,9 +80,14 @@ export class OMCHUDProvider {
     }
   }
 
+  setSkillsCount(count: number): void {
+    this.skillsCount = count;
+    void this.notifyAll();
+  }
+
   async readStateFiles(): Promise<HUDData> {
     // SDK data is the baseline; version always comes from install
-    const result: HUDData = { ...EMPTY, ...this.sdkData, version: this.version };
+    const result: HUDData = { ...EMPTY, ...this.sdkData, version: this.version, skillsCount: this.skillsCount };
 
     const stateDir = path.join(this.vaultPath, '.omc', 'state');
     if (!fs.existsSync(stateDir)) return result;
@@ -93,6 +105,10 @@ export class OMCHUDProvider {
       if (fileEffort !== null) result.effort = fileEffort;
       const cost = hudCache.cost?.total_cost_usd;
       if (typeof cost === 'number') result.costUsd = cost;
+      const fiveHour = hudCache.rate_limits?.five_hour?.used_percentage;
+      if (typeof fiveHour === 'number') result.fiveHourPercent = Math.round(fiveHour);
+      const sevenDay = hudCache.rate_limits?.seven_day?.used_percentage;
+      if (typeof sevenDay === 'number') result.sevenDayPercent = Math.round(sevenDay);
     }
 
     const subagents = readJson(
@@ -150,6 +166,10 @@ interface HudStdinCache {
   context_window?: { used_percentage?: number };
   effort?: { level?: string };
   cost?: { total_cost_usd?: number };
+  rate_limits?: {
+    five_hour?: { used_percentage?: number };
+    seven_day?: { used_percentage?: number };
+  };
 }
 
 interface SubagentTracking {

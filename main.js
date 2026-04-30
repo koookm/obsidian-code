@@ -26396,11 +26396,15 @@ var EMPTY = {
   contextPercent: null,
   effort: null,
   costUsd: null,
-  activeAgents: null
+  activeAgents: null,
+  fiveHourPercent: null,
+  sevenDayPercent: null,
+  skillsCount: null
 };
 var OMCHUDProvider = class {
   constructor(install, vaultPath) {
     this.sdkData = { model: null, contextPercent: null };
+    this.skillsCount = null;
     this.listeners = [];
     this.timer = null;
     this.failCount = 0;
@@ -26422,9 +26426,13 @@ var OMCHUDProvider = class {
     } catch (e) {
     }
   }
+  setSkillsCount(count) {
+    this.skillsCount = count;
+    void this.notifyAll();
+  }
   async readStateFiles() {
-    var _a, _b, _c, _d, _e, _f;
-    const result = { ...EMPTY, ...this.sdkData, version: this.version };
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
+    const result = { ...EMPTY, ...this.sdkData, version: this.version, skillsCount: this.skillsCount };
     const stateDir = path10.join(this.vaultPath, ".omc", "state");
     if (!fs9.existsSync(stateDir)) return result;
     const hudCache = readJson(
@@ -26439,6 +26447,10 @@ var OMCHUDProvider = class {
       if (fileEffort !== null) result.effort = fileEffort;
       const cost = (_f = hudCache.cost) == null ? void 0 : _f.total_cost_usd;
       if (typeof cost === "number") result.costUsd = cost;
+      const fiveHour = (_h = (_g = hudCache.rate_limits) == null ? void 0 : _g.five_hour) == null ? void 0 : _h.used_percentage;
+      if (typeof fiveHour === "number") result.fiveHourPercent = Math.round(fiveHour);
+      const sevenDay = (_j = (_i = hudCache.rate_limits) == null ? void 0 : _i.seven_day) == null ? void 0 : _j.used_percentage;
+      if (typeof sevenDay === "number") result.sevenDayPercent = Math.round(sevenDay);
     }
     const subagents = readJson(
       path10.join(stateDir, "subagent-tracking.json")
@@ -29644,6 +29656,8 @@ var OMCHUDView = class {
   /** container must be the inner chat container, not the leaf root */
   constructor(container) {
     this.visible = false;
+    this.collapsed = true;
+    this.lastData = null;
     this.el = container.createDiv({ cls: "oc-omc-hud" });
     this.el.style.display = "none";
   }
@@ -29658,9 +29672,21 @@ var OMCHUDView = class {
   }
   update(data) {
     if (!this.visible) return;
+    this.lastData = data;
+    this.render();
+  }
+  render() {
+    if (!this.lastData) return;
+    const data = this.lastData;
     this.el.empty();
     const label = data.version ? `OMC v${data.version}` : "OMC";
-    this.el.createSpan({ text: `[${label}]` });
+    const labelSpan = this.el.createSpan({ cls: "oc-hud-label", text: `[${label}]` });
+    labelSpan.title = this.collapsed ? "Click to expand" : "Click to collapse";
+    labelSpan.addEventListener("click", () => {
+      this.collapsed = !this.collapsed;
+      this.render();
+    });
+    if (this.collapsed) return;
     const sep2 = () => this.el.createSpan({ text: " \u2502 " });
     if (data.model) {
       sep2();
@@ -29672,6 +29698,18 @@ var OMCHUDView = class {
       const cls = pct >= 85 ? "oc-hud-critical" : pct >= 70 ? "oc-hud-warning" : "";
       this.el.createSpan({ cls, text: `ctx:${pct}%` });
     }
+    if (data.fiveHourPercent !== null) {
+      sep2();
+      const pct = data.fiveHourPercent;
+      const cls = pct >= 85 ? "oc-hud-critical" : pct >= 70 ? "oc-hud-warning" : "";
+      this.el.createSpan({ cls, text: `5h:${pct}%` });
+    }
+    if (data.sevenDayPercent !== null) {
+      sep2();
+      const pct = data.sevenDayPercent;
+      const cls = pct >= 85 ? "oc-hud-critical" : pct >= 70 ? "oc-hud-warning" : "";
+      this.el.createSpan({ cls, text: `7d:${pct}%` });
+    }
     if (data.effort) {
       sep2();
       this.el.createSpan({ text: `effort:${data.effort}` });
@@ -29680,12 +29718,16 @@ var OMCHUDView = class {
       sep2();
       this.el.createSpan({ text: `$${data.costUsd.toFixed(2)}` });
     }
+    if (data.skillsCount !== null && data.skillsCount > 0) {
+      sep2();
+      this.el.createSpan({ text: `skills:${data.skillsCount}` });
+    }
     if (data.activeAgents !== null && data.activeAgents > 0) {
       sep2();
       this.el.createSpan({ text: `agents:${data.activeAgents}` });
     }
-    const hasSessionData = data.model !== null || data.contextPercent !== null || data.costUsd !== null;
-    if (!hasSessionData) {
+    const hasData = data.model !== null || data.contextPercent !== null || data.costUsd !== null;
+    if (!hasData) {
       sep2();
       this.el.createSpan({ cls: "oc-hud-idle", text: "idle" });
     }
@@ -38824,11 +38866,13 @@ var ObsidianCodeView = class extends import_obsidian33.ItemView {
     try {
       const omcInstall = await OMCDetector.detect();
       if (!omcInstall) return;
+      let loadedSkillsCount = 0;
       if (this.slashCommandManager) {
         const existing = this.slashCommandManager.getCommands();
         const existingNames = new Set(existing.map((c) => c.name));
         this.omcSkillsLoader = new OMCSkillsLoader(omcInstall.pluginRoot);
         const skills = this.omcSkillsLoader.load(existingNames);
+        loadedSkillsCount = skills.length;
         if (skills.length > 0) {
           this.slashCommandManager.setCommands([
             ...existing,
@@ -38850,6 +38894,7 @@ var ObsidianCodeView = class extends import_obsidian33.ItemView {
           return (_a = this.omcHUDView) == null ? void 0 : _a.update(data);
         });
         this.omcHUDProvider.start();
+        if (loadedSkillsCount > 0) this.omcHUDProvider.setSkillsCount(loadedSkillsCount);
         const initial = await this.omcHUDProvider.readStateFiles();
         this.omcHUDView.show();
         this.omcHUDView.update(initial);
@@ -39085,22 +39130,29 @@ var ObsidianCodeView = class extends import_obsidian33.ItemView {
       var _a2;
       (_a2 = this.fileContextManager) == null ? void 0 : _a2.preScanExternalContexts();
     });
-    const saveBtn = inputToolbar.createDiv({ cls: "oc-header-btn" });
-    (0, import_obsidian33.setIcon)(saveBtn, "file-output");
-    saveBtn.setAttribute("aria-label", "Save conversation to note");
-    saveBtn.addEventListener("click", (e) => {
-      const menu = new import_obsidian33.Menu();
-      menu.addItem(
-        (item) => item.setTitle("Append full conversation").setIcon("file-text").onClick(() => void this.plugin.appendConversationToNote())
-      );
-      menu.addItem(
-        (item) => item.setTitle("Append summary").setIcon("sparkles").onClick(() => void this.plugin.summarizeConversationToNote())
-      );
-      menu.addItem(
-        (item) => item.setTitle("Copy to clipboard").setIcon("clipboard-copy").onClick(() => void this.plugin.copyConversationToClipboard())
-      );
-      menu.showAtMouseEvent(e);
-    });
+    const appendNoteBtn = document.createElement("div");
+    appendNoteBtn.className = "oc-header-btn";
+    (0, import_obsidian33.setIcon)(appendNoteBtn, "file-text");
+    appendNoteBtn.setAttribute("aria-label", "Append conversation to note");
+    appendNoteBtn.addEventListener("click", () => void this.plugin.appendConversationToNote());
+    const appendSummaryBtn = document.createElement("div");
+    appendSummaryBtn.className = "oc-header-btn";
+    (0, import_obsidian33.setIcon)(appendSummaryBtn, "sparkles");
+    appendSummaryBtn.setAttribute("aria-label", "Append summary to note");
+    appendSummaryBtn.addEventListener("click", () => void this.plugin.summarizeConversationToNote());
+    const copyClipboardBtn = document.createElement("div");
+    copyClipboardBtn.className = "oc-header-btn";
+    (0, import_obsidian33.setIcon)(copyClipboardBtn, "clipboard-copy");
+    copyClipboardBtn.setAttribute("aria-label", "Copy conversation to clipboard");
+    copyClipboardBtn.addEventListener("click", () => void this.plugin.copyConversationToClipboard());
+    const permissionToggleEl = inputToolbar.querySelector(".oc-permission-toggle");
+    if (permissionToggleEl) {
+      inputToolbar.insertBefore(appendNoteBtn, permissionToggleEl);
+      inputToolbar.insertBefore(appendSummaryBtn, permissionToggleEl);
+      inputToolbar.insertBefore(copyClipboardBtn, permissionToggleEl);
+    } else {
+      inputToolbar.append(appendNoteBtn, appendSummaryBtn, copyClipboardBtn);
+    }
   }
   // ============================================
   // Controller Initialization

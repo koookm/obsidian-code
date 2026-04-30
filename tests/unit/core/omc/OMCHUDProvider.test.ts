@@ -48,6 +48,9 @@ describe('OMCHUDProvider', () => {
       effort: null,
       costUsd: null,
       activeAgents: null,
+      fiveHourPercent: null,
+      sevenDayPercent: null,
+      skillsCount: null,
     });
   });
 
@@ -105,6 +108,9 @@ describe('OMCHUDProvider', () => {
       effort: null,
       costUsd: null,
       activeAgents: null,
+      fiveHourPercent: null,
+      sevenDayPercent: null,
+      skillsCount: null,
     });
   });
 
@@ -137,6 +143,29 @@ describe('OMCHUDProvider', () => {
     expect(d.model).toBe('claude-sonnet-4-6');
     expect(d.contextPercent).toBe(35);
     expect(d.version).toBe('4.0.0');
+  });
+
+  it('parses rate_limits (5h and 7d usage) from hud-stdin-cache.json', async () => {
+    const vault = makeVault();
+    writeHudCache(vault, {
+      rate_limits: {
+        five_hour: { used_percentage: 7.5 },
+        seven_day: { used_percentage: 36.2 },
+      },
+    });
+
+    const provider = new OMCHUDProvider(TEST_INSTALL, vault);
+    const data = await provider.readStateFiles();
+
+    expect(data.fiveHourPercent).toBe(8);
+    expect(data.sevenDayPercent).toBe(36);
+  });
+
+  it('setSkillsCount propagates to readStateFiles result', async () => {
+    const provider = new OMCHUDProvider(TEST_INSTALL, '/nonexistent-vault');
+    provider.setSkillsCount(21);
+    const data = await provider.readStateFiles();
+    expect(data.skillsCount).toBe(21);
   });
 
   it('state-file model wins over push() SDK model when both present', async () => {

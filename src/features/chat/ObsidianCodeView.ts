@@ -6,7 +6,7 @@
  */
 
 import type { WorkspaceLeaf } from 'obsidian';
-import { ItemView, Menu, setIcon } from 'obsidian';
+import { ItemView, setIcon } from 'obsidian';
 
 import { SlashCommandManager } from '../../core/commands';
 import { CLIBridge } from '../../core/omc/CLIBridge';
@@ -181,11 +181,13 @@ export class ObsidianCodeView extends ItemView {
       if (!omcInstall) return;
 
       // Skills → merge into slash command list
+      let loadedSkillsCount = 0;
       if (this.slashCommandManager) {
         const existing = this.slashCommandManager.getCommands();
         const existingNames = new Set(existing.map((c) => c.name));
         this.omcSkillsLoader = new OMCSkillsLoader(omcInstall.pluginRoot);
         const skills = this.omcSkillsLoader.load(existingNames);
+        loadedSkillsCount = skills.length;
         if (skills.length > 0) {
           this.slashCommandManager.setCommands([
             ...existing,
@@ -206,6 +208,7 @@ export class ObsidianCodeView extends ItemView {
         this.omcHUDProvider = new OMCHUDProvider(omcInstall, vaultPath);
         this.omcHUDProvider.on((data) => this.omcHUDView?.update(data));
         this.omcHUDProvider.start();
+        if (loadedSkillsCount > 0) this.omcHUDProvider.setSkillsCount(loadedSkillsCount);
         // Render immediately so version shows before the first poll fires
         const initial = await this.omcHUDProvider.readStateFiles();
         this.omcHUDView.show();
@@ -473,32 +476,33 @@ export class ObsidianCodeView extends ItemView {
       this.fileContextManager?.preScanExternalContexts();
     });
 
-    // Save to note button (right side of toolbar)
-    const saveBtn = inputToolbar.createDiv({ cls: 'oc-header-btn' });
-    setIcon(saveBtn, 'file-output');
-    saveBtn.setAttribute('aria-label', 'Save conversation to note');
-    saveBtn.addEventListener('click', (e) => {
-      const menu = new Menu();
-      menu.addItem((item) =>
-        item
-          .setTitle('Append full conversation')
-          .setIcon('file-text')
-          .onClick(() => void this.plugin.appendConversationToNote())
-      );
-      menu.addItem((item) =>
-        item
-          .setTitle('Append summary')
-          .setIcon('sparkles')
-          .onClick(() => void this.plugin.summarizeConversationToNote())
-      );
-      menu.addItem((item) =>
-        item
-          .setTitle('Copy to clipboard')
-          .setIcon('clipboard-copy')
-          .onClick(() => void this.plugin.copyConversationToClipboard())
-      );
-      menu.showAtMouseEvent(e);
-    });
+    // Export action buttons — inserted before permission toggle
+    const appendNoteBtn = document.createElement('div');
+    appendNoteBtn.className = 'oc-header-btn';
+    setIcon(appendNoteBtn as HTMLElement, 'file-text');
+    appendNoteBtn.setAttribute('aria-label', 'Append conversation to note');
+    appendNoteBtn.addEventListener('click', () => void this.plugin.appendConversationToNote());
+
+    const appendSummaryBtn = document.createElement('div');
+    appendSummaryBtn.className = 'oc-header-btn';
+    setIcon(appendSummaryBtn as HTMLElement, 'sparkles');
+    appendSummaryBtn.setAttribute('aria-label', 'Append summary to note');
+    appendSummaryBtn.addEventListener('click', () => void this.plugin.summarizeConversationToNote());
+
+    const copyClipboardBtn = document.createElement('div');
+    copyClipboardBtn.className = 'oc-header-btn';
+    setIcon(copyClipboardBtn as HTMLElement, 'clipboard-copy');
+    copyClipboardBtn.setAttribute('aria-label', 'Copy conversation to clipboard');
+    copyClipboardBtn.addEventListener('click', () => void this.plugin.copyConversationToClipboard());
+
+    const permissionToggleEl = inputToolbar.querySelector('.oc-permission-toggle');
+    if (permissionToggleEl) {
+      inputToolbar.insertBefore(appendNoteBtn, permissionToggleEl);
+      inputToolbar.insertBefore(appendSummaryBtn, permissionToggleEl);
+      inputToolbar.insertBefore(copyClipboardBtn, permissionToggleEl);
+    } else {
+      inputToolbar.append(appendNoteBtn, appendSummaryBtn, copyClipboardBtn);
+    }
   }
 
   // ============================================
