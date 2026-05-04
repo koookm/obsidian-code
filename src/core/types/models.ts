@@ -1,6 +1,10 @@
 /**
  * Model type definitions and constants.
  */
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 /** Model identifier (string to support custom models via environment variables). */
 export type ClaudeModel = string;
@@ -27,28 +31,39 @@ function parseModelList(data: any): { value: string; label: string; description:
 }
 
 /**
- * Fetches the list of available Claude models from the Anthropic API.
- * Requires ANTHROPIC_API_KEY — Anthropic's REST API does not support OAuth tokens.
- * Returns null if no API key is available or the request fails.
+ * Fetches the list of available Claude models.
+ * Tries ANTHROPIC_API_KEY (direct REST) first, then falls back to CLI OAuth
+ * (subscription users authenticated via `claude login`).
  */
 export async function fetchModelsFromCLI(
-  _cliPath: string
+  cliPath: string
 ): Promise<{ value: string; label: string; description: string }[] | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
 
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/models', {
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-    });
-    if (!res.ok) return null;
-    return parseModelList(await res.json());
-  } catch {
-    return null;
+  // Path 1: API key → direct REST call
+  if (apiKey) {
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/models', {
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+      });
+      if (res.ok) return parseModelList(await res.json());
+    } catch { /* fall through */ }
   }
+
+  // Path 2: CLI OAuth (subscription) → proxy via `claude api get /v1/models`
+  if (cliPath) {
+    try {
+      const { stdout } = await execFileAsync(cliPath, ['api', 'get', '/v1/models'], {
+        timeout: 10000,
+      });
+      return parseModelList(JSON.parse(stdout));
+    } catch { /* fall through */ }
+  }
+
+  return null;
 }
 
 /** Default Claude model options. */

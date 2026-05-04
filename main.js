@@ -23158,6 +23158,9 @@ function getPathFromToolInput(toolName, toolInput) {
 var VIEW_TYPE_OBSIDIAN_CODE = "obsidian-code-view";
 
 // src/core/types/models.ts
+var import_child_process2 = require("child_process");
+var import_util = require("util");
+var execFileAsync = (0, import_util.promisify)(import_child_process2.execFile);
 function parseModelList(data) {
   if (!(data == null ? void 0 : data.data) || !Array.isArray(data.data)) return null;
   const models = data.data.filter((m) => typeof m.id === "string" && m.id.startsWith("claude-")).sort((a, b) => b.id.localeCompare(a.id)).map((m) => ({
@@ -23167,21 +23170,30 @@ function parseModelList(data) {
   }));
   return models.length > 0 ? models : null;
 }
-async function fetchModelsFromCLI(_cliPath) {
+async function fetchModelsFromCLI(cliPath) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/models", {
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
-      }
-    });
-    if (!res.ok) return null;
-    return parseModelList(await res.json());
-  } catch (e) {
-    return null;
+  if (apiKey) {
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/models", {
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01"
+        }
+      });
+      if (res.ok) return parseModelList(await res.json());
+    } catch (e) {
+    }
   }
+  if (cliPath) {
+    try {
+      const { stdout } = await execFileAsync(cliPath, ["api", "get", "/v1/models"], {
+        timeout: 1e4
+      });
+      return parseModelList(JSON.parse(stdout));
+    } catch (e) {
+    }
+  }
+  return null;
 }
 var DEFAULT_CLAUDE_MODELS = [
   // --- Claude 4.7 (최신) ---
@@ -23422,7 +23434,7 @@ function createVaultRestrictionHook(context) {
 }
 
 // src/core/hooks/commandHookAdapter.ts
-var import_child_process2 = require("child_process");
+var import_child_process3 = require("child_process");
 var import_obsidian = require("obsidian");
 
 // src/core/types/hooks.ts
@@ -23458,7 +23470,7 @@ function execCommand(spec, event, hookInput, vaultPath) {
   return new Promise((resolve6) => {
     var _a, _b, _c, _d, _e;
     const timeout = Math.min((_a = spec.timeout) != null ? _a : DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
-    const child = (0, import_child_process2.spawn)(spec.command, {
+    const child = (0, import_child_process3.spawn)(spec.command, {
       shell: true,
       timeout,
       cwd: vaultPath,
@@ -26077,7 +26089,7 @@ var StorageService = class {
 var import_obsidian33 = require("obsidian");
 
 // src/core/commands/SlashCommandManager.ts
-var import_child_process3 = require("child_process");
+var import_child_process4 = require("child_process");
 var import_obsidian3 = require("obsidian");
 var SlashCommandManager = class {
   constructor(app, vaultPath, options = {}) {
@@ -26270,7 +26282,7 @@ var SlashCommandManager = class {
 };
 function defaultBashRunner(command, cwd2) {
   return new Promise((resolve6, reject) => {
-    (0, import_child_process3.exec)(
+    (0, import_child_process4.exec)(
       command,
       {
         cwd: cwd2,
@@ -26291,7 +26303,7 @@ function defaultBashRunner(command, cwd2) {
 }
 
 // src/core/omc/CLIBridge.ts
-var import_child_process4 = require("child_process");
+var import_child_process5 = require("child_process");
 var import_obsidian4 = require("obsidian");
 var CLIBridge = class {
   constructor() {
@@ -26310,7 +26322,7 @@ var CLIBridge = class {
       onError("A bridge process is already running");
       return false;
     }
-    const child = (0, import_child_process4.spawn)(command, { shell: true, cwd: vaultPath });
+    const child = (0, import_child_process5.spawn)(command, { shell: true, cwd: vaultPath });
     this.active = child;
     (_a = child.stdout) == null ? void 0 : _a.on("data", (d) => onChunk(d.toString()));
     (_b = child.stderr) == null ? void 0 : _b.on("data", (d) => onChunk(d.toString()));
@@ -26339,7 +26351,7 @@ var CLIBridge = class {
 };
 
 // src/core/omc/OMCDetector.ts
-var import_child_process5 = require("child_process");
+var import_child_process6 = require("child_process");
 var fs8 = __toESM(require("fs"));
 var import_obsidian5 = require("obsidian");
 var os4 = __toESM(require("os"));
@@ -26376,7 +26388,7 @@ var OMCDetector = class _OMCDetector {
   findCli() {
     return new Promise((resolve6) => {
       try {
-        const child = (0, import_child_process5.spawn)("omc", ["--version"], { shell: true, timeout: 3e3 });
+        const child = (0, import_child_process6.spawn)("omc", ["--version"], { shell: true, timeout: 3e3 });
         child.on("close", (code) => resolve6(code === 0 ? "omc" : null));
         child.on("error", () => resolve6(null));
       } catch (e) {
@@ -34010,7 +34022,7 @@ var EnvSnippetManager = class {
 var import_obsidian27 = require("obsidian");
 
 // src/features/mcp/McpTester.ts
-var import_child_process6 = require("child_process");
+var import_child_process7 = require("child_process");
 var http = __toESM(require("http"));
 var https = __toESM(require("https"));
 async function testMcpServer(server) {
@@ -34068,7 +34080,7 @@ async function testStdioServer(server) {
         });
         return;
       }
-      child = (0, import_child_process6.spawn)(cmd, args, {
+      child = (0, import_child_process7.spawn)(cmd, args, {
         env: { ...process.env, ...config2.env, PATH: getEnhancedPath((_a = config2.env) == null ? void 0 : _a.PATH) },
         stdio: ["pipe", "pipe", "pipe"]
       });
@@ -40629,7 +40641,7 @@ var ObsidianCodeSettingTab = class extends import_obsidian35.PluginSettingTab {
     new import_obsidian35.Setting(containerEl).setName("\uBAA8\uB378 \uC120\uD0DD").setHeading();
     const availableModels = this.plugin.getAvailableModels();
     const modelSource = this.plugin.runtimeAvailableModels ? `Anthropic API\uC5D0\uC11C ${availableModels.length}\uAC1C \uBAA8\uB378 \uB85C\uB4DC\uB428` : `\uAE30\uBCF8 \uBAA8\uB378 \uBAA9\uB85D \uC0AC\uC6A9 \uC911 (${availableModels.length}\uAC1C)`;
-    new import_obsidian35.Setting(containerEl).setName("\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uBAA8\uB378 \uC0C8\uB85C\uACE0\uCE68").setDesc(`\uD604\uC7AC: ${modelSource}. Anthropic API\uC5D0\uC11C \uCD5C\uC2E0 \uBAA8\uB378 \uBAA9\uB85D\uC744 \uAC00\uC838\uC635\uB2C8\uB2E4. (ANTHROPIC_API_KEY\uAC00 \uD658\uACBD \uBCC0\uC218 \uC124\uC815\uC5D0 \uC788\uC5B4\uC57C \uD569\uB2C8\uB2E4. Claude Max/Pro \uAD6C\uB3C5 OAuth\uB294 REST API \uBBF8\uC9C0\uC6D0.)`).addButton((button) => {
+    new import_obsidian35.Setting(containerEl).setName("\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uBAA8\uB378 \uC0C8\uB85C\uACE0\uCE68").setDesc(`\uD604\uC7AC: ${modelSource}. Anthropic API\uC5D0\uC11C \uCD5C\uC2E0 \uBAA8\uB378 \uBAA9\uB85D\uC744 \uAC00\uC838\uC635\uB2C8\uB2E4. (Claude Code CLI \uC778\uC99D(\uAD6C\uB3C5) \uB610\uB294 ANTHROPIC_API_KEY\uAC00 \uC788\uC73C\uBA74 \uC0AC\uC6A9 \uAC00\uB2A5\uD569\uB2C8\uB2E4.)`).addButton((button) => {
       button.setButtonText("\uBAA8\uB378 \uBAA9\uB85D \uAC00\uC838\uC624\uAE30").onClick(async () => {
         var _a, _b;
         button.setButtonText("\uBD88\uB7EC\uC624\uB294 \uC911...");
@@ -40639,7 +40651,7 @@ var ObsidianCodeSettingTab = class extends import_obsidian35.PluginSettingTab {
           const count = (_b = (_a = this.plugin.runtimeAvailableModels) == null ? void 0 : _a.length) != null ? _b : 0;
           new import_obsidian35.Notice(`\u2713 ${count}\uAC1C \uBAA8\uB378\uC744 \uC131\uACF5\uC801\uC73C\uB85C \uBD88\uB7EC\uC654\uC2B5\uB2C8\uB2E4.`);
         } else {
-          new import_obsidian35.Notice("\u274C \uBAA8\uB378 \uBAA9\uB85D \uBD88\uB7EC\uC624\uAE30 \uC2E4\uD328. \uD658\uACBD \uBCC0\uC218\uC5D0 ANTHROPIC_API_KEY\uB97C \uC124\uC815\uD558\uAC70\uB098 \uAE30\uBCF8 \uBAA9\uB85D\uC744 \uC0AC\uC6A9\uD558\uC138\uC694.");
+          new import_obsidian35.Notice("\u274C \uBAA8\uB378 \uBAA9\uB85D \uBD88\uB7EC\uC624\uAE30 \uC2E4\uD328. Claude Code CLI\uB85C \uB85C\uADF8\uC778\uD558\uAC70\uB098 \uD658\uACBD \uBCC0\uC218\uC5D0 ANTHROPIC_API_KEY\uB97C \uC124\uC815\uD558\uC138\uC694.");
         }
         this.display();
       });
