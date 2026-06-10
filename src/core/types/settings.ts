@@ -4,7 +4,7 @@
 
 import type { HooksConfig } from './hooks';
 import type { ClaudeModel, ThinkingBudget } from './models';
-import { DEFAULT_CLAUDE_MODELS } from './models';
+import { DEFAULT_CLAUDE_MODELS, DEFAULT_MODEL } from './models';
 
 /** Platform-specific blocked commands (Unix). */
 const UNIX_BLOCKED_COMMANDS = [
@@ -160,10 +160,10 @@ export const DEFAULT_SETTINGS: ObsidianCodeSettings = {
   userName: '',
   enableBlocklist: true,
   blockedCommands: getDefaultBlockedCommands(),
-  model: 'sonnet',  // Claude Max 구독 기본 모델
+  model: DEFAULT_MODEL,  // Claude Max 구독 기본 모델 (latest 별칭)
   enableAutoTitleGeneration: true,
   titleGenerationModel: '',  // Empty = auto (ANTHROPIC_DEFAULT_HAIKU_MODEL or claude-haiku-4-5)
-  lastClaudeModel: 'sonnet',
+  lastClaudeModel: DEFAULT_MODEL,
   lastCustomModel: '',
   lastEnvHash: '',
   thinkingBudget: 'off',
@@ -196,12 +196,16 @@ export interface InstructionRefineResult {
   error?: string;               // Error message (if failed)
 }
 
-// Preserve CLI aliases and known full IDs; anything else falls back to claude-sonnet-4-6.
+// Preserve CLI aliases and known full IDs; anything else falls back to the default (latest alias).
 const ALLOWED_MODELS = new Set(DEFAULT_CLAUDE_MODELS.map((m) => m.value));
 const LEGACY_ALIASES = new Set(['sonnet', 'opus', 'haiku']);  // old CLI shorthand
+const LEGACY_MODEL_MAP: Record<string, ClaudeModel> = {
+  'claude-opus-4-7': 'claude-opus-4-8',  // superseded pinned IDs → current pinned ID
+};
 
 export function migrateModel(saved: string): ClaudeModel {
   if (ALLOWED_MODELS.has(saved)) return saved;
   if (LEGACY_ALIASES.has(saved)) return saved;  // preserve; plugin resolves alias at runtime
-  return 'claude-sonnet-4-6';
+  if (LEGACY_MODEL_MAP[saved]) return LEGACY_MODEL_MAP[saved];
+  return DEFAULT_MODEL;
 }

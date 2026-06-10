@@ -17,6 +17,7 @@ import type {
   ObsidianCodeSettings} from './core/types';
 import {
   DEFAULT_CLAUDE_MODELS,
+  DEFAULT_MODEL,
   DEFAULT_SETTINGS,
   VIEW_TYPE_OBSIDIAN_CODE,
 } from './core/types';
@@ -329,10 +330,6 @@ export default class ObsidianCodePlugin extends Plugin {
     );
   }
 
-  private getDefaultModelValues(): string[] {
-    return DEFAULT_CLAUDE_MODELS.map((m) => m.value);
-  }
-
   private getPreferredCustomModel(envVars: Record<string, string>, customModels: { value: string }[]): string {
     const envPreferred = getCurrentModelFromEnvironment(envVars);
     if (envPreferred && customModels.some((m) => m.value === envPreferred)) {
@@ -400,7 +397,7 @@ export default class ObsidianCodePlugin extends Plugin {
     if (customModels.length > 0) {
       this.settings.model = this.getPreferredCustomModel(envVars, customModels);
     } else {
-      this.settings.model = DEFAULT_CLAUDE_MODELS[0].value;
+      this.settings.model = DEFAULT_MODEL;
     }
 
     this.settings.lastEnvHash = currentHash;

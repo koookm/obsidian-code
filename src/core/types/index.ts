@@ -21,6 +21,7 @@ export {
 export {
   type ClaudeModel,
   DEFAULT_CLAUDE_MODELS,
+  DEFAULT_MODEL,
   DEFAULT_THINKING_BUDGET,
   THINKING_BUDGETS,
   type ThinkingBudget,

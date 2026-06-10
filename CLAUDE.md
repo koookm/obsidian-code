@@ -184,7 +184,7 @@ await MarkdownRenderer.renderMarkdown(markdown, container, sourcePath, component
 
 ```typescript
 interface ObsidianCodeSettings {
-  model: string;                     // 'claude-opus-4-7' | 'claude-sonnet-4-6' | 'claude-haiku-4-5' | custom
+  model: string;                     // 'fable' (default, latest) | 'claude-fable-5' | 'claude-opus-4-8' | 'claude-sonnet-4-6' | custom
   titleGenerationModel: string;      // Model for auto titles (empty = auto)
   thinkingBudget: 'off' | 'low' | 'medium' | 'high' | 'xhigh';  // 0 | 4k | 8k | 16k | 32k tokens
   permissionMode: 'yolo' | 'normal';
@@ -244,9 +244,12 @@ vault/.claude/
 
 | Model | Default Thinking |
 |-------|------------------|
-| `claude-opus-4-7` | Medium (8k) |
-| `claude-sonnet-4-6` | Low (4k) |
-| `claude-haiku-4-5` | Off |
+| `claude-fable-5` / `fable` | Medium (8k) |
+| `claude-opus-4-8` / `opus` | Medium (8k) |
+| `claude-sonnet-4-6` / `sonnet` | Low (4k) |
+| `haiku` | Off |
+
+Default model: `fable` (CLI alias — always resolves to the latest Fable).
 
 Custom models via env vars: `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_*_MODEL`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`
 

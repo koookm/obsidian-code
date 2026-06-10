@@ -23196,15 +23196,19 @@ async function fetchModelsFromCLI(cliPath) {
   return null;
 }
 var DEFAULT_CLAUDE_MODELS = [
-  // --- Claude 4.7 (최신) ---
-  { value: "claude-opus-4-7", label: "Claude Opus 4.7", description: "\uCD5C\uC2E0 Opus \u2014 \uBCF5\uC7A1\uD55C \uC791\uC5C5\uC5D0 \uCD5C\uC801" },
+  // --- Claude Fable 5 (최신) ---
+  { value: "claude-fable-5", label: "Claude Fable 5", description: "\uCD5C\uC2E0 \uD50C\uB798\uADF8\uC2ED \u2014 \uAC00\uC7A5 \uAC15\uB825\uD55C \uBAA8\uB378" },
+  // --- Claude 4.8 ---
+  { value: "claude-opus-4-8", label: "Claude Opus 4.8", description: "\uCD5C\uC2E0 Opus \u2014 \uBCF5\uC7A1\uD55C \uC791\uC5C5\uC5D0 \uCD5C\uC801" },
   // --- Claude 4.6 ---
   { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", description: "\uC131\uB2A5\uACFC \uC18D\uB3C4\uC758 \uADE0\uD615 \u2014 \uC77C\uBC18 \uC791\uC5C5 \uAD8C\uC7A5" },
   // --- CLI 별칭 (항상 최신 버전으로 자동 해석) ---
+  { value: "fable", label: "Fable (Latest)", description: "Always points to the latest Fable via CLI" },
   { value: "haiku", label: "Haiku (Latest)", description: "Always points to the latest Haiku via CLI" },
   { value: "sonnet", label: "Sonnet (Latest)", description: "Always points to the latest Sonnet via CLI" },
   { value: "opus", label: "Opus (Latest)", description: "Always points to the latest Opus via CLI" }
 ];
+var DEFAULT_MODEL = "fable";
 var THINKING_BUDGETS = [
   { value: "off", label: "Off", tokens: 0 },
   { value: "low", label: "Low", tokens: 4e3 },
@@ -23214,10 +23218,15 @@ var THINKING_BUDGETS = [
 ];
 var DEFAULT_THINKING_BUDGET = {
   // CLI 별칭
+  "fable": "medium",
   "haiku": "off",
   "sonnet": "low",
   "opus": "medium",
-  // Claude 4.7
+  // Claude Fable 5
+  "claude-fable-5": "medium",
+  // Claude 4.8
+  "claude-opus-4-8": "medium",
+  // Claude 4.7 (legacy)
   "claude-opus-4-7": "medium",
   // Claude 4.6
   "claude-sonnet-4-6": "low"
@@ -23286,12 +23295,12 @@ var DEFAULT_SETTINGS = {
   userName: "",
   enableBlocklist: true,
   blockedCommands: getDefaultBlockedCommands(),
-  model: "sonnet",
-  // Claude Max 구독 기본 모델
+  model: DEFAULT_MODEL,
+  // Claude Max 구독 기본 모델 (latest 별칭)
   enableAutoTitleGeneration: true,
   titleGenerationModel: "",
   // Empty = auto (ANTHROPIC_DEFAULT_HAIKU_MODEL or claude-haiku-4-5)
-  lastClaudeModel: "sonnet",
+  lastClaudeModel: DEFAULT_MODEL,
   lastCustomModel: "",
   lastEnvHash: "",
   thinkingBudget: "off",
@@ -23319,10 +23328,15 @@ var DEFAULT_SETTINGS = {
 };
 var ALLOWED_MODELS = new Set(DEFAULT_CLAUDE_MODELS.map((m) => m.value));
 var LEGACY_ALIASES = /* @__PURE__ */ new Set(["sonnet", "opus", "haiku"]);
+var LEGACY_MODEL_MAP = {
+  "claude-opus-4-7": "claude-opus-4-8"
+  // superseded pinned IDs → current pinned ID
+};
 function migrateModel(saved) {
   if (ALLOWED_MODELS.has(saved)) return saved;
   if (LEGACY_ALIASES.has(saved)) return saved;
-  return "claude-sonnet-4-6";
+  if (LEGACY_MODEL_MAP[saved]) return LEGACY_MODEL_MAP[saved];
+  return DEFAULT_MODEL;
 }
 
 // src/core/types/mcp.ts
@@ -41049,9 +41063,6 @@ var ObsidianCodePlugin = class extends import_obsidian36.Plugin {
       this.getActiveEnvironmentVariables()
     );
   }
-  getDefaultModelValues() {
-    return DEFAULT_CLAUDE_MODELS.map((m) => m.value);
-  }
   getPreferredCustomModel(envVars, customModels) {
     const envPreferred = getCurrentModelFromEnvironment(envVars);
     if (envPreferred && customModels.some((m) => m.value === envPreferred)) {
@@ -41101,7 +41112,7 @@ var ObsidianCodePlugin = class extends import_obsidian36.Plugin {
     if (customModels.length > 0) {
       this.settings.model = this.getPreferredCustomModel(envVars, customModels);
     } else {
-      this.settings.model = DEFAULT_CLAUDE_MODELS[0].value;
+      this.settings.model = DEFAULT_MODEL;
     }
     this.settings.lastEnvHash = currentHash;
     return { changed: true, invalidatedConversations };

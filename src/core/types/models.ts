@@ -68,15 +68,21 @@ export async function fetchModelsFromCLI(
 
 /** Default Claude model options. */
 export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; description: string }[] = [
-  // --- Claude 4.7 (최신) ---
-  { value: 'claude-opus-4-7',   label: 'Claude Opus 4.7',   description: '최신 Opus — 복잡한 작업에 최적' },
+  // --- Claude Fable 5 (최신) ---
+  { value: 'claude-fable-5',    label: 'Claude Fable 5',    description: '최신 플래그십 — 가장 강력한 모델' },
+  // --- Claude 4.8 ---
+  { value: 'claude-opus-4-8',   label: 'Claude Opus 4.8',   description: '최신 Opus — 복잡한 작업에 최적' },
   // --- Claude 4.6 ---
   { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', description: '성능과 속도의 균형 — 일반 작업 권장' },
   // --- CLI 별칭 (항상 최신 버전으로 자동 해석) ---
+  { value: 'fable',  label: 'Fable (Latest)',  description: 'Always points to the latest Fable via CLI' },
   { value: 'haiku',  label: 'Haiku (Latest)',  description: 'Always points to the latest Haiku via CLI' },
   { value: 'sonnet', label: 'Sonnet (Latest)', description: 'Always points to the latest Sonnet via CLI' },
   { value: 'opus',   label: 'Opus (Latest)',   description: 'Always points to the latest Opus via CLI' },
 ];
+
+/** Default model: latest Fable via CLI alias (auto-resolves to the newest version). */
+export const DEFAULT_MODEL: ClaudeModel = 'fable';
 
 /** Extended thinking token budget levels. */
 export type ThinkingBudget = 'off' | 'low' | 'medium' | 'high' | 'xhigh';
@@ -93,10 +99,15 @@ export const THINKING_BUDGETS: { value: ThinkingBudget; label: string; tokens: n
 /** Default thinking budget per model tier. */
 export const DEFAULT_THINKING_BUDGET: Record<string, ThinkingBudget> = {
   // CLI 별칭
+  'fable': 'medium',
   'haiku': 'off',
   'sonnet': 'low',
   'opus': 'medium',
-  // Claude 4.7
+  // Claude Fable 5
+  'claude-fable-5': 'medium',
+  // Claude 4.8
+  'claude-opus-4-8': 'medium',
+  // Claude 4.7 (legacy)
   'claude-opus-4-7': 'medium',
   // Claude 4.6
   'claude-sonnet-4-6': 'low',
