@@ -4,7 +4,7 @@
   "version": "1.6.1",
   "minAppVersion": "1.0.0",
   "description": "Embed Claude AI as a sidebar chat with full agentic capabilities for file operations and bash commands.",
-  "author": "koookm",
+  "author": "K",
   "authorUrl": "https://github.com/koookm",
   "isDesktopOnly": true
 }
