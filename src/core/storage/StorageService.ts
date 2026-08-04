@@ -73,6 +73,7 @@ interface LegacyData extends ObsidianCodeSettings {
   conversations?: Conversation[];
   activeConversationId?: string;
   migrationVersion?: number;
+  modelListCache?: unknown;
 }
 
 export class StorageService {
@@ -139,6 +140,7 @@ export class StorageService {
       'lastEnvHash',
       'lastClaudeModel',
       'lastCustomModel',
+      'modelListCache',
       'migrationVersion',
     ]);
     const hasSettings = Object.keys(legacyData).some(key => !stateKeys.has(key));
@@ -183,7 +185,7 @@ export class StorageService {
       lastEnvHash: legacyData.lastEnvHash || '',
       lastClaudeModel: legacyData.lastClaudeModel || 'haiku',
       lastCustomModel: legacyData.lastCustomModel || '',
-      modelListCache: null,
+      modelListCache: normalizeModelListCache(legacyData.modelListCache),
     });
 
     return true;
@@ -244,6 +246,7 @@ export class StorageService {
       lastClaudeModel: _____,
       lastCustomModel: ______,
       migrationVersion: _______,
+      modelListCache: ________,
       ...settingsFields
     } = legacyData;
 

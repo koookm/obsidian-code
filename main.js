@@ -29668,6 +29668,7 @@ var StorageService = class {
       "lastEnvHash",
       "lastClaudeModel",
       "lastCustomModel",
+      "modelListCache",
       "migrationVersion"
     ]);
     const hasSettings = Object.keys(legacyData).some((key) => !stateKeys.has(key));
@@ -29698,7 +29699,7 @@ var StorageService = class {
       lastEnvHash: legacyData.lastEnvHash || "",
       lastClaudeModel: legacyData.lastClaudeModel || "haiku",
       lastCustomModel: legacyData.lastCustomModel || "",
-      modelListCache: null
+      modelListCache: normalizeModelListCache(legacyData.modelListCache)
     });
     return true;
   }
@@ -29752,6 +29753,7 @@ var StorageService = class {
       lastClaudeModel: _____,
       lastCustomModel: ______,
       migrationVersion: _______,
+      modelListCache: ________,
       ...settingsFields
     } = legacyData;
     const settings = {
@@ -32755,6 +32757,11 @@ var ImageContextManager = class {
 
 // src/ui/components/InputToolbar.ts
 var import_obsidian13 = require("obsidian");
+function isEditableTarget(target) {
+  const el2 = target;
+  if (!el2 || typeof el2.tagName !== "string") return false;
+  return el2.isContentEditable || /^(input|textarea|select)$/i.test(el2.tagName);
+}
 var ModelSelector = class {
   constructor(parentEl, callbacks) {
     this.buttonEl = null;
@@ -32764,6 +32771,7 @@ var ModelSelector = class {
     this.isRefreshing = false;
     this.onDocumentClick = null;
     this.onDocumentKeyDown = null;
+    this.previousFocusEl = null;
     this.callbacks = callbacks;
     this.container = parentEl.createDiv({ cls: "oc-model-selector" });
     this.render();
@@ -32797,7 +32805,7 @@ var ModelSelector = class {
     }
   }
   open() {
-    var _a6;
+    var _a6, _b5, _c3;
     if (this.isOpen) return;
     this.isOpen = true;
     this.view = "root";
@@ -32809,9 +32817,12 @@ var ModelSelector = class {
     document.addEventListener("click", this.onDocumentClick);
     document.addEventListener("keydown", this.onDocumentKeyDown, true);
     this.renderOptions();
+    this.previousFocusEl = document.activeElement;
+    (_b5 = this.dropdownEl) == null ? void 0 : _b5.setAttribute("tabindex", "-1");
+    (_c3 = this.dropdownEl) == null ? void 0 : _c3.focus({ preventScroll: true });
   }
   close() {
-    var _a6;
+    var _a6, _b5;
     if (!this.isOpen) return;
     this.isOpen = false;
     this.view = "root";
@@ -32825,6 +32836,10 @@ var ModelSelector = class {
       this.onDocumentKeyDown = null;
     }
     this.renderOptions();
+    if ((_b5 = this.previousFocusEl) == null ? void 0 : _b5.isConnected) {
+      this.previousFocusEl.focus({ preventScroll: true });
+    }
+    this.previousFocusEl = null;
   }
   /** Number keys pick a model; Escape closes. */
   handleKeyDown(e) {
@@ -32837,6 +32852,7 @@ var ModelSelector = class {
     if (this.view !== "root") return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (!/^[1-9]$/.test(e.key)) return;
+    if (isEditableTarget(e.target)) return;
     const entries = this.getCatalog().latest;
     const entry = entries[Number(e.key) - 1];
     if (!entry) return;

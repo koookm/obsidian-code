@@ -45,6 +45,13 @@ export interface ToolbarCallbacks {
   isPlanModeRequested?: () => boolean;
 }
 
+/** True when the event landed in a text field, where digits are input, not shortcuts. */
+export function isEditableTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.tagName !== 'string') return false;
+  return el.isContentEditable || /^(input|textarea|select)$/i.test(el.tagName);
+}
+
 /**
  * Model selector menu.
  *
@@ -66,6 +73,7 @@ export class ModelSelector {
   private isRefreshing = false;
   private onDocumentClick: ((e: MouseEvent) => void) | null = null;
   private onDocumentKeyDown: ((e: KeyboardEvent) => void) | null = null;
+  private previousFocusEl: HTMLElement | null = null;
 
   constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
     this.callbacks = callbacks;
@@ -120,6 +128,12 @@ export class ModelSelector {
     document.addEventListener('keydown', this.onDocumentKeyDown, true);
 
     this.renderOptions();
+
+    // Move focus into the menu so the number shortcuts land here instead of in
+    // whatever field the user was typing in.
+    this.previousFocusEl = document.activeElement as HTMLElement | null;
+    this.dropdownEl?.setAttribute('tabindex', '-1');
+    this.dropdownEl?.focus({ preventScroll: true });
   }
 
   private close() {
@@ -138,6 +152,12 @@ export class ModelSelector {
     }
 
     this.renderOptions();
+
+    // Hand focus back to whatever had it, so the chat input stays usable.
+    if (this.previousFocusEl?.isConnected) {
+      this.previousFocusEl.focus({ preventScroll: true });
+    }
+    this.previousFocusEl = null;
   }
 
   /** Number keys pick a model; Escape closes. */
@@ -152,6 +172,8 @@ export class ModelSelector {
     if (this.view !== 'root') return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (!/^[1-9]$/.test(e.key)) return;
+    // Never swallow a digit that is being typed into a field.
+    if (isEditableTarget(e.target)) return;
 
     const entries = this.getCatalog().latest;
     const entry = entries[Number(e.key) - 1];
