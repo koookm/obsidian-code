@@ -14,6 +14,11 @@
   font-size: 12px;
 }
 
+.oc-model-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
 .oc-model-label {
   font-weight: 500;
 }
@@ -28,6 +33,7 @@
   height: 12px;
 }
 
+/* Click-driven menu: opened by the button, closed by outside click or Escape */
 .oc-model-dropdown {
   position: absolute;
   bottom: 0;
@@ -36,52 +42,127 @@
   /* Height of the button + some spacing */
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
+  min-width: 240px;
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
-  border-radius: 4px;
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);
   z-index: 1000;
   width: max-content;
-  padding: 4px;
+  padding: 6px;
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.15s ease, visibility 0.15s ease;
+  transition: opacity 0.12s ease, visibility 0.12s ease;
 }
 
-.oc-model-selector:hover .oc-model-dropdown {
+.oc-model-dropdown.is-open {
   opacity: 1;
   visibility: visible;
 }
 
-.oc-model-option {
-  padding: 4px 8px;
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--text-muted);
-  border-radius: 3px;
-  transition: background 0.1s ease, color 0.1s ease;
+.oc-model-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  color: var(--text-faint);
   white-space: nowrap;
+}
+
+.oc-model-menu-back {
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 0.1s ease;
+}
+
+.oc-model-menu-back:hover {
+  color: var(--text-muted);
+}
+
+.oc-model-back-icon {
+  display: flex;
+  align-items: center;
+}
+
+.oc-model-back-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.oc-model-menu-divider {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--background-modifier-border);
+}
+
+.oc-model-option {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 24px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-normal);
+  white-space: nowrap;
+  transition: background 0.1s ease, color 0.1s ease;
 }
 
 .oc-model-option:hover {
   background: var(--background-modifier-hover);
-  color: var(--text-normal);
 }
 
-.oc-model-option.selected {
-  background: rgba(217, 119, 87, 0.15);
-  color: #D97757;
+.oc-model-option-label {
+  font-weight: 400;
+}
+
+.oc-model-option.selected .oc-model-option-label {
   font-weight: 500;
 }
 
-.oc-model-option .oc-model-desc {
-  font-size: 10px;
+/* Right-hand affordance: number shortcut, or a check on the active model */
+.oc-model-option-hint {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 14px;
+  font-size: 12px;
   color: var(--text-faint);
-  margin-left: 12px;
-  font-weight: normal;
-  opacity: 0.7;
+}
+
+.oc-model-option-hint svg {
+  width: 14px;
+  height: 14px;
+}
+
+.oc-model-option-check {
+  color: var(--text-normal);
+}
+
+/* "More models ›" — entry point to the pinned-version submenu */
+.oc-model-more-row {
+  color: var(--text-muted);
+}
+
+.oc-model-more-row.has-selected .oc-model-option-label {
+  color: var(--text-normal);
+  font-weight: 500;
+}
+
+.oc-model-refresh {
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.oc-model-refresh:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
 }

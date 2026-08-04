@@ -4,6 +4,8 @@
 
 import { Notice, setIcon } from 'obsidian';
 
+import type { CatalogEntry, ModelCatalog, RawModelEntry } from '../../core/models/ModelCatalog';
+import { findCatalogEntry, resolveModelCatalog } from '../../core/models/ModelCatalog';
 import type {
   ClaudeModel,
   ObsidianCodeMcpServer,
@@ -16,7 +18,6 @@ import {
 } from '../../core/types';
 import { CHECK_ICON_SVG, MCP_ICON_SVG } from '../../features/chat/constants';
 import type { McpService } from '../../features/mcp/McpService';
-import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../utils/env';
 import { findConflictingPath } from '../../utils/externalContext';
 
 /** Settings access interface for toolbar components. */
@@ -34,20 +35,45 @@ export interface ToolbarCallbacks {
   onPermissionModeChange: (mode: PermissionMode) => Promise<void>;
   getSettings: () => ToolbarSettings;
   getEnvironmentVariables?: () => string;
-  /** Returns the runtime-fetched model list (or null to use default). */
-  getRuntimeModels?: () => { value: string; label: string; description: string }[] | null;
+  /** Returns the model list fetched from the Anthropic API (null when unavailable). */
+  getRuntimeModels?: () => RawModelEntry[] | null;
+  /** Re-fetches the model list; resolves to false when the fetch fails. */
+  onRefreshModels?: () => Promise<boolean>;
   /** Whether plan mode was initiated by the agent (EnterPlanMode tool). */
   isAgentInitiatedPlanMode?: () => boolean;
   /** Whether the user has requested plan mode (UI/prefix only). */
   isPlanModeRequested?: () => boolean;
 }
 
-/** Model selector dropdown component. */
+/** True when the event landed in a text field, where digits are input, not shortcuts. */
+export function isEditableTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.tagName !== 'string') return false;
+  return el.isContentEditable || /^(input|textarea|select)$/i.test(el.tagName);
+}
+
+/**
+ * Model selector menu.
+ *
+ * Mirrors the Claude Code model menu: a "Models" list showing one row per
+ * family named after the version it currently resolves to ("Opus 5"), with a
+ * number shortcut on each row and a checkmark on the active one. Pinned
+ * versions live in a "More models" submenu.
+ *
+ * The rows are CLI aliases, so when a new version ships the row renames itself
+ * and keeps resolving to the newest release with no plugin update.
+ */
 export class ModelSelector {
   private container: HTMLElement;
   private buttonEl: HTMLElement | null = null;
   private dropdownEl: HTMLElement | null = null;
   private callbacks: ToolbarCallbacks;
+  private isOpen = false;
+  private view: 'root' | 'more' = 'root';
+  private isRefreshing = false;
+  private onDocumentClick: ((e: MouseEvent) => void) | null = null;
+  private onDocumentKeyDown: ((e: KeyboardEvent) => void) | null = null;
+  private previousFocusEl: HTMLElement | null = null;
 
   constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
     this.callbacks = callbacks;
@@ -55,52 +81,162 @@ export class ModelSelector {
     this.render();
   }
 
-  /** Returns available models: runtime-fetched > env var custom > default hardcoded. */
-  private getAvailableModels() {
-    // 1. Runtime-fetched models from Anthropic API (via CLI) take highest priority
-    if (this.callbacks.getRuntimeModels) {
-      const runtimeModels = this.callbacks.getRuntimeModels();
-      if (runtimeModels && runtimeModels.length > 0) {
-        return runtimeModels;
-      }
-    }
-
-    // 2. Custom models from environment variables
-    if (this.callbacks.getEnvironmentVariables) {
-      const envVarsStr = this.callbacks.getEnvironmentVariables();
-      const envVars = parseEnvironmentVariables(envVarsStr);
-      const customModels = getModelsFromEnvironment(envVars);
-      if (customModels.length > 0) {
-        return customModels;
-      }
-    }
-
-    // 3. Hardcoded default list
-    return [...DEFAULT_CLAUDE_MODELS];
+  /** Builds the catalog from the fetched list, env vars, and offline fallback. */
+  private getCatalog(): ModelCatalog {
+    return resolveModelCatalog({
+      runtimeModels: this.callbacks.getRuntimeModels?.() ?? null,
+      envText: this.callbacks.getEnvironmentVariables?.() ?? '',
+      fallbackModels: DEFAULT_CLAUDE_MODELS,
+    });
   }
 
   private render() {
     this.container.empty();
 
     this.buttonEl = this.container.createDiv({ cls: 'oc-model-btn' });
+    this.buttonEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggle();
+    });
     this.updateDisplay();
 
     this.dropdownEl = this.container.createDiv({ cls: 'oc-model-dropdown' });
     this.renderOptions();
   }
 
+  /** Opens or closes the menu. */
+  private toggle() {
+    if (this.isOpen) {
+      this.close();
+    } else {
+      this.open();
+    }
+  }
+
+  private open() {
+    if (this.isOpen) return;
+    this.isOpen = true;
+    this.view = 'root';
+    this.dropdownEl?.addClass('is-open');
+
+    // Close on any click outside, and drive the number shortcuts while open.
+    this.onDocumentClick = (e: MouseEvent) => {
+      if (!this.container.contains(e.target as Node)) this.close();
+    };
+    this.onDocumentKeyDown = (e: KeyboardEvent) => this.handleKeyDown(e);
+    document.addEventListener('click', this.onDocumentClick);
+    document.addEventListener('keydown', this.onDocumentKeyDown, true);
+
+    this.renderOptions();
+
+    // Move focus into the menu so the number shortcuts land here instead of in
+    // whatever field the user was typing in.
+    this.previousFocusEl = document.activeElement as HTMLElement | null;
+    this.dropdownEl?.setAttribute('tabindex', '-1');
+    this.dropdownEl?.focus({ preventScroll: true });
+  }
+
+  private close() {
+    if (!this.isOpen) return;
+    this.isOpen = false;
+    this.view = 'root';
+    this.dropdownEl?.removeClass('is-open');
+
+    if (this.onDocumentClick) {
+      document.removeEventListener('click', this.onDocumentClick);
+      this.onDocumentClick = null;
+    }
+    if (this.onDocumentKeyDown) {
+      document.removeEventListener('keydown', this.onDocumentKeyDown, true);
+      this.onDocumentKeyDown = null;
+    }
+
+    this.renderOptions();
+
+    // Hand focus back to whatever had it, so the chat input stays usable.
+    if (this.previousFocusEl?.isConnected) {
+      this.previousFocusEl.focus({ preventScroll: true });
+    }
+    this.previousFocusEl = null;
+  }
+
+  /** Number keys pick a model; Escape closes. */
+  private handleKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      this.close();
+      return;
+    }
+
+    if (this.view !== 'root') return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (!/^[1-9]$/.test(e.key)) return;
+    // Never swallow a digit that is being typed into a field.
+    if (isEditableTarget(e.target)) return;
+
+    const entries = this.getCatalog().latest;
+    const entry = entries[Number(e.key) - 1];
+    if (!entry) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    void this.select(entry.value);
+  }
+
+  /** Applies a model choice and closes the menu. */
+  private async select(value: string) {
+    await this.callbacks.onModelChange(value);
+    this.close();
+    this.updateDisplay();
+  }
+
+  /** Removes document listeners; call when the view is torn down. */
+  destroy() {
+    this.close();
+  }
+
   updateDisplay() {
     if (!this.buttonEl) return;
     const currentModel = this.callbacks.getSettings().model;
-    const models = this.getAvailableModels();
-    const modelInfo = models.find(m => m.value === currentModel);
-
-    const displayModel = modelInfo || models[0];
+    const entry = findCatalogEntry(this.getCatalog(), currentModel);
 
     this.buttonEl.empty();
 
     const labelEl = this.buttonEl.createSpan({ cls: 'oc-model-label' });
-    labelEl.setText(displayModel?.label || 'Unknown');
+    labelEl.setText(entry.label || currentModel || 'Unknown');
+    this.buttonEl.setAttribute('title', entry.description || entry.value);
+  }
+
+  /**
+   * Renders one model row.
+   * `hint` is the number shortcut; the active row shows a check instead.
+   */
+  private renderOption(
+    parentEl: HTMLElement,
+    model: CatalogEntry,
+    currentModel: string,
+    hint?: string
+  ) {
+    const option = parentEl.createDiv({ cls: 'oc-model-option' });
+    const isSelected = model.value === currentModel;
+    if (isSelected) option.addClass('selected');
+
+    option.createSpan({ cls: 'oc-model-option-label', text: model.label });
+    option.setAttribute('title', model.description || model.value);
+
+    const hintEl = option.createSpan({ cls: 'oc-model-option-hint' });
+    if (isSelected) {
+      hintEl.addClass('oc-model-option-check');
+      setIcon(hintEl, 'check');
+    } else if (hint) {
+      hintEl.setText(hint);
+    }
+
+    option.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await this.select(model.value);
+    });
   }
 
   renderOptions() {
@@ -108,27 +244,82 @@ export class ModelSelector {
     this.dropdownEl.empty();
 
     const currentModel = this.callbacks.getSettings().model;
-    const models = this.getAvailableModels();
+    const catalog = this.getCatalog();
 
-    for (const model of [...models].reverse()) {
-      const option = this.dropdownEl.createDiv({ cls: 'oc-model-option' });
-      if (model.value === currentModel) {
-        option.addClass('selected');
-      }
+    if (this.view === 'more') {
+      this.renderMoreView(catalog, currentModel);
+      return;
+    }
 
-      option.createSpan({ text: model.label });
-      if (model.description) {
-        option.setAttribute('title', model.description);
-        option.createSpan({ cls: 'oc-model-desc', text: model.description });
-      }
+    this.dropdownEl.createDiv({ cls: 'oc-model-menu-header', text: 'Models' });
 
-      option.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        await this.callbacks.onModelChange(model.value);
+    catalog.latest.forEach((model, index) => {
+      this.renderOption(
+        this.dropdownEl as HTMLElement,
+        model,
+        currentModel,
+        index < 9 ? String(index + 1) : undefined
+      );
+    });
+
+    if (catalog.previous.length === 0) return;
+
+    this.dropdownEl.createDiv({ cls: 'oc-model-menu-divider' });
+
+    const more = this.dropdownEl.createDiv({ cls: 'oc-model-option oc-model-more-row' });
+    more.createSpan({ cls: 'oc-model-option-label', text: 'More models' });
+    const chevron = more.createSpan({ cls: 'oc-model-option-hint' });
+    setIcon(chevron, 'chevron-right');
+    // A pinned selection lives in the submenu — mark the entry point so the
+    // active model is never invisible from the root view.
+    if (catalog.previous.some((m) => m.value === currentModel)) {
+      more.addClass('has-selected');
+    }
+    more.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.view = 'more';
+      this.renderOptions();
+    });
+  }
+
+  /** The "More models" submenu: pinned versions plus a manual refresh. */
+  private renderMoreView(catalog: ModelCatalog, currentModel: string) {
+    if (!this.dropdownEl) return;
+
+    const back = this.dropdownEl.createDiv({ cls: 'oc-model-menu-header oc-model-menu-back' });
+    const backIcon = back.createSpan({ cls: 'oc-model-back-icon' });
+    setIcon(backIcon, 'chevron-left');
+    back.createSpan({ text: 'Models' });
+    back.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.view = 'root';
+      this.renderOptions();
+    });
+
+    for (const model of catalog.previous) {
+      this.renderOption(this.dropdownEl, model, currentModel);
+    }
+
+    if (!this.callbacks.onRefreshModels) return;
+
+    this.dropdownEl.createDiv({ cls: 'oc-model-menu-divider' });
+
+    const refresh = this.dropdownEl.createDiv({ cls: 'oc-model-refresh' });
+    refresh.setText(this.isRefreshing ? '모델 목록 불러오는 중...' : '모델 목록 새로고침');
+    refresh.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (this.isRefreshing) return;
+      this.isRefreshing = true;
+      this.renderOptions();
+      try {
+        const ok = await this.callbacks.onRefreshModels?.();
+        new Notice(ok ? '✓ 모델 목록을 새로고침했습니다.' : '모델 목록을 가져오지 못했습니다.');
+      } finally {
+        this.isRefreshing = false;
         this.updateDisplay();
         this.renderOptions();
-      });
-    }
+      }
+    });
   }
 }
 

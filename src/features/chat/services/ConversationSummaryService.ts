@@ -10,6 +10,7 @@ import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 
 import { CONVERSATION_SUMMARY_SYSTEM_PROMPT } from '../../../core/prompts/conversationSummary';
+import { extractAssistantText, type TextExtractableMessage } from '../../../core/sdk/extractAssistantText';
 import type { ChatMessage, Conversation } from '../../../core/types';
 import type ObsidianCodePlugin from '../../../main';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
@@ -131,13 +132,7 @@ export class ConversationSummaryService {
       .join('\n\n');
   }
 
-  private extractTextFromMessage(
-    message: { type: string; message?: { content?: Array<{ type: string; text?: string }> } }
-  ): string {
-    if (message.type !== 'assistant' || !message.message?.content) return '';
-    return message.message.content
-      .filter((b): b is { type: 'text'; text: string } => b.type === 'text' && !!b.text)
-      .map((b) => b.text)
-      .join('');
+  private extractTextFromMessage(message: TextExtractableMessage): string {
+    return extractAssistantText(message);
   }
 }

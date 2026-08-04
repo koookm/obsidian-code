@@ -9,6 +9,7 @@ import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 
 import { TITLE_GENERATION_SYSTEM_PROMPT } from '../../../core/prompts/titleGeneration';
+import { extractAssistantText, type TextExtractableMessage } from '../../../core/sdk/extractAssistantText';
 import type ObsidianCodePlugin from '../../../main';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
@@ -176,19 +177,8 @@ Generate a title for this conversation:`;
   }
 
   /** Extracts text content from SDK message. */
-  private extractTextFromMessage(
-    message: { type: string; message?: { content?: Array<{ type: string; text?: string }> } }
-  ): string {
-    if (message.type !== 'assistant' || !message.message?.content) {
-      return '';
-    }
-
-    return message.message.content
-      .filter((block): block is { type: 'text'; text: string } =>
-        block.type === 'text' && !!block.text
-      )
-      .map((block) => block.text)
-      .join('');
+  private extractTextFromMessage(message: TextExtractableMessage): string {
+    return extractAssistantText(message);
   }
 
   /** Parses and cleans the title from response. */

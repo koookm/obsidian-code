@@ -27,6 +27,7 @@ import {
 import { expandUserHooks } from '../hooks/commandHookAdapter';
 import { hydrateImagesData } from '../images/imageLoader';
 import type { McpServerManager } from '../mcp';
+import { applyThinkingOptions } from '../models/thinkingOptions';
 import { buildSystemPrompt } from '../prompts/mainAgent';
 import { isSessionInitEvent, isStreamChunk, transformSDKMessage } from '../sdk';
 import {
@@ -45,7 +46,7 @@ import type {
   StreamChunk,
   ToolDiffData,
 } from '../types';
-import { THINKING_BUDGETS } from '../types';
+import type { SDKMessage } from '../types/sdk';
 
 // ============================================
 // Session Management (inlined)
@@ -563,12 +564,8 @@ export class ObsidianCodeService {
       options.permissionMode = 'default';
     }
 
-    // Enable extended thinking based on thinking budget setting
-    const budgetSetting = this.plugin.settings.thinkingBudget;
-    const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
-    if (budgetConfig && budgetConfig.tokens > 0) {
-      options.maxThinkingTokens = budgetConfig.tokens;
-    }
+    // Extended thinking: SDK `thinking` config (+ legacy maxThinkingTokens)
+    applyThinkingOptions(options, this.plugin.settings.thinkingBudget);
 
     // Apply allowedTools restriction if specified by slash command
     // Include 'Skill' tool to maintain skill availability
@@ -592,7 +589,12 @@ export class ObsidianCodeService {
           break;
         }
 
-        for (const event of transformSDKMessage(message, { intendedModel: selectedModel })) {
+        // The SDK's message union grows every release (new block kinds, new
+        // stream events); the plugin models only the subset it renders, so the
+        // stream is narrowed once here rather than at every field access.
+        const sdkMessage = message as unknown as SDKMessage;
+
+        for (const event of transformSDKMessage(sdkMessage, { intendedModel: selectedModel })) {
           if (isSessionInitEvent(event)) {
             this.sessionManager.captureSession(event.sessionId);
             streamSessionId = event.sessionId;

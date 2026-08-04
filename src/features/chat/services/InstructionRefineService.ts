@@ -8,9 +8,11 @@
 import type { HookCallbackMatcher, Options } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 
+import { applyThinkingOptions } from '../../../core/models/thinkingOptions';
 import { buildRefineSystemPrompt } from '../../../core/prompts/instructionRefine';
+import { extractAssistantText, type TextExtractableMessage } from '../../../core/sdk/extractAssistantText';
 import { TOOL_GLOB, TOOL_GREP, TOOL_READ } from '../../../core/tools/toolNames';
-import { type InstructionRefineResult, THINKING_BUDGETS } from '../../../core/types';
+import { type InstructionRefineResult } from '../../../core/types';
 import type ObsidianCodePlugin from '../../../main';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath, isPathWithinVault as isPathWithinVaultUtil } from '../../../utils/path';
@@ -112,11 +114,7 @@ export class InstructionRefineService {
       options.resume = this.sessionId;
     }
 
-    const budgetSetting = this.plugin.settings.thinkingBudget;
-    const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
-    if (budgetConfig && budgetConfig.tokens > 0) {
-      options.maxThinkingTokens = budgetConfig.tokens;
-    }
+    applyThinkingOptions(options, this.plugin.settings.thinkingBudget);
 
     try {
       const response = agentQuery({ prompt, options });
@@ -169,15 +167,8 @@ export class InstructionRefineService {
   }
 
   /** Extracts text content from SDK message. */
-  private extractTextFromMessage(message: { type: string; message?: { content?: Array<{ type: string; text?: string }> } }): string {
-    if (message.type !== 'assistant' || !message.message?.content) {
-      return '';
-    }
-
-    return message.message.content
-      .filter((block): block is { type: 'text'; text: string } => block.type === 'text' && !!block.text)
-      .map(block => block.text)
-      .join('');
+  private extractTextFromMessage(message: TextExtractableMessage): string {
+    return extractAssistantText(message);
   }
 
   /** Creates PreToolUse hook to enforce read-only mode. */

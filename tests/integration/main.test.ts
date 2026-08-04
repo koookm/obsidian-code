@@ -36,6 +36,7 @@ describe('ObsidianCodePlugin', () => {
           setViewState: jest.fn().mockResolvedValue(undefined),
         }),
         revealLeaf: jest.fn(),
+        onLayoutReady: jest.fn((callback: () => void) => callback()),
       },
     };
 

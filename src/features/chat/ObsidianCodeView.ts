@@ -9,13 +9,14 @@ import type { WorkspaceLeaf } from 'obsidian';
 import { ItemView, setIcon } from 'obsidian';
 
 import { SlashCommandManager } from '../../core/commands';
+import { isClaudeModelId } from '../../core/models/ModelCatalog';
 import { CLIBridge } from '../../core/omc/CLIBridge';
 import { OMCDetector } from '../../core/omc/OMCDetector';
 import { OMCHUDProvider } from '../../core/omc/OMCHUDProvider';
 import { OMCMCPImporter } from '../../core/omc/OMCMCPImporter';
 import { OMCSkillsLoader } from '../../core/omc/OMCSkillsLoader';
 import type { ClaudeModel, ThinkingBudget } from '../../core/types';
-import { DEFAULT_CLAUDE_MODELS, DEFAULT_THINKING_BUDGET, VIEW_TYPE_OBSIDIAN_CODE } from '../../core/types';
+import { getDefaultThinkingBudget, VIEW_TYPE_OBSIDIAN_CODE } from '../../core/types';
 import type ObsidianCodePlugin from '../../main';
 import {
   cleanupThinkingBlock,
@@ -120,6 +121,12 @@ export class ObsidianCodeView extends ItemView {
 
   getIcon(): string {
     return 'terminal';
+  }
+
+  /** Re-renders the model selector after the model list is refreshed. */
+  refreshModelSelector(): void {
+    this.modelSelector?.updateDisplay();
+    this.modelSelector?.renderOptions();
   }
 
   async onOpen() {
@@ -265,6 +272,8 @@ export class ObsidianCodeView extends ItemView {
     this.titleGenerationService = null;
     this.todoPanel?.destroy();
     this.todoPanel = null;
+    this.modelSelector?.destroy();
+    this.modelSelector = null;
 
     // Cleanup OMC integration (no-ops if OMC was not installed)
     this.omcHUDProvider?.stop();
@@ -407,13 +416,15 @@ export class ObsidianCodeView extends ItemView {
       }),
       getEnvironmentVariables: () => this.plugin.getActiveEnvironmentVariables(),
       getRuntimeModels: () => this.plugin.runtimeAvailableModels,
+      onRefreshModels: () => this.plugin.refreshAvailableModels(),
       isAgentInitiatedPlanMode: () => this.state.planModeState?.agentInitiated ?? false,
       isPlanModeRequested: () => this.state.planModeRequested,
       onModelChange: async (model: ClaudeModel) => {
         this.plugin.settings.model = model;
-        const isDefaultModel = DEFAULT_CLAUDE_MODELS.find((m: any) => m.value === model);
-        if (isDefaultModel) {
-          this.plugin.settings.thinkingBudget = DEFAULT_THINKING_BUDGET[model];
+        // Env-declared ids for a custom endpoint are tracked separately so the
+        // last first-party choice survives an env change.
+        if (isClaudeModelId(model)) {
+          this.plugin.settings.thinkingBudget = getDefaultThinkingBudget(model);
           this.plugin.settings.lastClaudeModel = model;
         } else {
           this.plugin.settings.lastCustomModel = model;

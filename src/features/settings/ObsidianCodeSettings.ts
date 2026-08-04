@@ -11,10 +11,8 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { getCurrentPlatformKey } from '../../core/types';
-import { DEFAULT_CLAUDE_MODELS } from '../../core/types/models';
 import type ObsidianCodePlugin from '../../main';
 import { EnvSnippetManager, McpSettingsManager, SlashCommandSettings } from '../../ui';
-import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../utils/env';
 import { expandHomePath } from '../../utils/path';
 import { getInstalledSkills, installObsidianSkills, installSkillFromUrl, isObsidianSkillsInstalled, removeSkill, uninstallObsidianSkills } from '../skills/ObsidianSkillsInstaller';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
@@ -208,12 +206,7 @@ export class ObsidianCodeSettingTab extends PluginSettingTab {
           // Add "Auto" option (empty string = use default logic)
           dropdown.addOption('', 'Auto (Haiku)');
 
-          // Get available models from environment or defaults
-          const envVars = parseEnvironmentVariables(this.plugin.settings.environmentVariables);
-          const customModels = getModelsFromEnvironment(envVars);
-          const models = customModels.length > 0 ? customModels : DEFAULT_CLAUDE_MODELS;
-
-          for (const model of models) {
+          for (const model of this.plugin.getModelCatalog().all) {
             dropdown.addOption(model.value, model.label);
           }
 
@@ -657,13 +650,15 @@ export class ObsidianCodeSettingTab extends PluginSettingTab {
 
     // Show current available models
     const availableModels = this.plugin.getAvailableModels();
+    const fetchedAt = this.plugin.modelsFetchedAt;
     const modelSource = this.plugin.runtimeAvailableModels
-      ? `Anthropic API에서 ${availableModels.length}개 모델 로드됨`
+      ? `Anthropic API에서 ${availableModels.length}개 모델 로드됨` +
+        (fetchedAt ? ` (${new Date(fetchedAt).toLocaleString()} 기준)` : '')
       : `기본 모델 목록 사용 중 (${availableModels.length}개)`;
 
     new Setting(containerEl)
       .setName('사용 가능한 모델 새로고침')
-      .setDesc(`현재: ${modelSource}. Anthropic API에서 최신 모델 목록을 가져옵니다. (Claude Code CLI 인증(구독) 또는 ANTHROPIC_API_KEY가 있으면 사용 가능합니다.)`)
+      .setDesc(`현재: ${modelSource}. 모델 목록은 플러그인 시작 시 자동으로 갱신되며(6시간 캐시), 새 모델이 출시되면 별도 업데이트 없이 반영됩니다. (Claude Code CLI 인증(구독) 또는 ANTHROPIC_API_KEY 필요)`)
       .addButton((button) => {
         button
           .setButtonText('모델 목록 가져오기')
@@ -684,14 +679,22 @@ export class ObsidianCodeSettingTab extends PluginSettingTab {
     // Current model dropdown
     new Setting(containerEl)
       .setName('기본 모델')
-      .setDesc('채팅에서 사용할 기본 Claude 모델')
+      .setDesc('채팅에서 사용할 기본 Claude 모델. "(Latest)" 항목은 CLI가 실행 시점에 최신 버전으로 해석합니다.')
       .addDropdown((dropdown) => {
-        const models = this.plugin.getAvailableModels();
-        for (const model of models) {
-          dropdown.addOption(model.value, `${model.label}${model.description ? ' — ' + model.description : ''}`);
+        const catalog = this.plugin.getModelCatalog();
+        for (const model of catalog.latest) {
+          const suffix = model.resolvedId ? ` — 현재 ${model.resolvedId}` : '';
+          dropdown.addOption(model.value, `${model.label}${suffix}`);
+        }
+        for (const model of catalog.previous) {
+          dropdown.addOption(model.value, `${model.label} (버전 고정)`);
+        }
+        const current = this.plugin.settings.model;
+        if (!catalog.all.some((m) => m.value === current)) {
+          dropdown.addOption(current, `${current} (사용자 지정)`);
         }
         dropdown
-          .setValue(this.plugin.settings.model)
+          .setValue(current)
           .onChange(async (value) => {
             this.plugin.settings.model = value;
             await this.plugin.saveSettings();

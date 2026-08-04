@@ -4,6 +4,8 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 
+import { formatModelLabel, parseModelId } from '../models/ModelCatalog';
+
 const execFileAsync = promisify(execFile);
 
 /** Model identifier (string to support custom models via environment variables). */
@@ -17,12 +19,7 @@ function parseModelList(data: any): { value: string; label: string; description:
     .sort((a, b) => b.id.localeCompare(a.id))
     .map((m) => ({
       value: m.id as string,
-      label: (m.display_name as string | undefined) ||
-        (m.id as string)
-          .replace(/^claude-/, 'Claude ')
-          .replace(/-(\d)/g, ' $1')
-          .replace(/-/g, ' ')
-          .replace(/\b\w/g, (c: string) => c.toUpperCase()),
+      label: (m.display_name as string | undefined) || formatModelLabel(m.id as string),
       description: m.context_window
         ? `컨텍스트 ${Math.round((m.context_window as number) / 1000)}k 토큰`
         : m.id as string,
@@ -66,19 +63,21 @@ export async function fetchModelsFromCLI(
   return null;
 }
 
-/** Default Claude model options. */
+/**
+ * Offline fallback model list.
+ *
+ * Only used when the Anthropic model list cannot be fetched (no CLI login, no
+ * API key, offline). The UI catalog is built from this list the same way it is
+ * built from the API response, so new releases surface automatically as soon as
+ * the fetch succeeds — this list never needs to be exhaustive.
+ */
 export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; description: string }[] = [
-  // --- Claude Fable 5 (최신) ---
-  { value: 'claude-fable-5',    label: 'Claude Fable 5',    description: '최신 플래그십 — 가장 강력한 모델' },
-  // --- Claude 4.8 ---
-  { value: 'claude-opus-4-8',   label: 'Claude Opus 4.8',   description: '최신 Opus — 복잡한 작업에 최적' },
-  // --- Claude 4.6 ---
-  { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', description: '성능과 속도의 균형 — 일반 작업 권장' },
-  // --- CLI 별칭 (항상 최신 버전으로 자동 해석) ---
-  { value: 'fable',  label: 'Fable (Latest)',  description: 'Always points to the latest Fable via CLI' },
-  { value: 'haiku',  label: 'Haiku (Latest)',  description: 'Always points to the latest Haiku via CLI' },
-  { value: 'sonnet', label: 'Sonnet (Latest)', description: 'Always points to the latest Sonnet via CLI' },
-  { value: 'opus',   label: 'Opus (Latest)',   description: 'Always points to the latest Opus via CLI' },
+  { value: 'claude-fable-5',    label: 'Claude Fable 5',    description: '플래그십 — 가장 강력한 모델' },
+  { value: 'claude-opus-5',     label: 'Claude Opus 5',     description: 'Opus — 복잡한 작업에 최적' },
+  { value: 'claude-opus-4-8',   label: 'Claude Opus 4.8',   description: '이전 Opus' },
+  { value: 'claude-sonnet-5',   label: 'Claude Sonnet 5',   description: '성능과 속도의 균형' },
+  { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', description: '이전 Sonnet' },
+  { value: 'claude-haiku-4-5',  label: 'Claude Haiku 4.5',  description: '가장 빠른 경량 모델' },
 ];
 
 /** Default model: latest Fable via CLI alias (auto-resolves to the newest version). */
@@ -96,19 +95,28 @@ export const THINKING_BUDGETS: { value: ThinkingBudget; label: string; tokens: n
   { value: 'xhigh', label: 'Ultra', tokens: 32000 },
 ];
 
-/** Default thinking budget per model tier. */
-export const DEFAULT_THINKING_BUDGET: Record<string, ThinkingBudget> = {
-  // CLI 별칭
-  'fable': 'medium',
-  'haiku': 'off',
-  'sonnet': 'low',
-  'opus': 'medium',
-  // Claude Fable 5
-  'claude-fable-5': 'medium',
-  // Claude 4.8
-  'claude-opus-4-8': 'medium',
-  // Claude 4.7 (legacy)
-  'claude-opus-4-7': 'medium',
-  // Claude 4.6
-  'claude-sonnet-4-6': 'low',
+/**
+ * Default thinking budget per model family.
+ *
+ * Keyed by family rather than by pinned model id so a newly released version
+ * inherits its family's budget without a plugin update.
+ */
+export const FAMILY_THINKING_BUDGET: Record<string, ThinkingBudget> = {
+  fable: 'medium',
+  opus: 'medium',
+  sonnet: 'low',
+  haiku: 'off',
 };
+
+/** Budget used when a model's family is unknown. */
+const FALLBACK_THINKING_BUDGET: ThinkingBudget = 'medium';
+
+/**
+ * Resolves the default thinking budget for a model id or CLI alias.
+ * Works for any version of a known family (`claude-opus-9`, `opus`, ...).
+ */
+export function getDefaultThinkingBudget(model: string): ThinkingBudget {
+  if (!model) return FALLBACK_THINKING_BUDGET;
+  const { family } = parseModelId(model);
+  return FAMILY_THINKING_BUDGET[family] ?? FALLBACK_THINKING_BUDGET;
+}

@@ -2,9 +2,10 @@
  * Settings type definitions.
  */
 
+import { CLI_ALIAS_FAMILIES, isPlausibleModelId } from '../models/ModelCatalog';
 import type { HooksConfig } from './hooks';
 import type { ClaudeModel, ThinkingBudget } from './models';
-import { DEFAULT_CLAUDE_MODELS, DEFAULT_MODEL } from './models';
+import { DEFAULT_MODEL } from './models';
 
 /** Platform-specific blocked commands (Unix). */
 const UNIX_BLOCKED_COMMANDS = [
@@ -196,16 +197,22 @@ export interface InstructionRefineResult {
   error?: string;               // Error message (if failed)
 }
 
-// Preserve CLI aliases and known full IDs; anything else falls back to the default (latest alias).
-const ALLOWED_MODELS = new Set(DEFAULT_CLAUDE_MODELS.map((m) => m.value));
-const LEGACY_ALIASES = new Set(['sonnet', 'opus', 'haiku']);  // old CLI shorthand
+// Retired pinned IDs are redirected to their family alias so they keep resolving
+// to a live model. Everything else that parses as a real model ID is preserved
+// as-is — the model list is fetched at runtime, so a saved ID this build has
+// never heard of (a model released after it shipped) must survive.
 const LEGACY_MODEL_MAP: Record<string, ClaudeModel> = {
-  'claude-opus-4-7': 'claude-opus-4-8',  // superseded pinned IDs → current pinned ID
+  'claude-opus-4-7': 'opus',
+  'claude-opus-4-6': 'opus',
+  'claude-opus-4-5': 'opus',
+  'claude-sonnet-4-5': 'sonnet',
 };
 
 export function migrateModel(saved: string): ClaudeModel {
-  if (ALLOWED_MODELS.has(saved)) return saved;
-  if (LEGACY_ALIASES.has(saved)) return saved;  // preserve; plugin resolves alias at runtime
-  if (LEGACY_MODEL_MAP[saved]) return LEGACY_MODEL_MAP[saved];
+  const trimmed = typeof saved === 'string' ? saved.trim() : '';
+  if (!trimmed) return DEFAULT_MODEL;
+  if (LEGACY_MODEL_MAP[trimmed]) return LEGACY_MODEL_MAP[trimmed];
+  if (CLI_ALIAS_FAMILIES.has(trimmed)) return trimmed;  // resolved by the CLI at runtime
+  if (isPlausibleModelId(trimmed)) return trimmed;
   return DEFAULT_MODEL;
 }
