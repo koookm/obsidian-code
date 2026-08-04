@@ -16,6 +16,8 @@ src/
 │   ├── images/                  # Image caching and loading
 │   ├── mcp/                     # MCP server config management
 │   │   └── McpServerManager.ts
+│   ├── models/                  # Dynamic model catalog (id parsing, tiering)
+│   │   └── ModelCatalog.ts
 │   ├── prompts/                 # System prompts for agents
 │   ├── sdk/                     # SDK message transformation
 │   ├── security/                # Approval, blocklist, path validation
@@ -54,6 +56,7 @@ src/
 | | `hooks/` | Security and diff tracking hooks |
 | | `images/` | Image caching with SHA-256 dedup |
 | | `mcp/` | MCP server config loading and filtering (McpServerManager) |
+| | `models/` | Model id parsing and two-tier catalog (ModelCatalog) |
 | | `prompts/` | System prompts (main agent, inline edit, instruction refine, title generation) |
 | | `sdk/` | SDK message transformation |
 | | `security/` | Approval, blocklist, path validation |
@@ -184,7 +187,7 @@ await MarkdownRenderer.renderMarkdown(markdown, container, sourcePath, component
 
 ```typescript
 interface ObsidianCodeSettings {
-  model: string;                     // 'fable' (default, latest) | 'claude-fable-5' | 'claude-opus-4-8' | 'claude-sonnet-4-6' | custom
+  model: string;                     // CLI alias ('fable' default) | pinned id ('claude-opus-5') | custom
   titleGenerationModel: string;      // Model for auto titles (empty = auto)
   thinkingBudget: 'off' | 'low' | 'medium' | 'high' | 'xhigh';  // 0 | 4k | 8k | 16k | 32k tokens
   permissionMode: 'yolo' | 'normal';
@@ -236,22 +239,53 @@ vault/.claude/
 | `mcp.json` | MCP server configs with `_obsidianCode` metadata (Claude Code compatible) |
 | `commands/*.md` | Slash commands with YAML frontmatter |
 | `sessions/*.jsonl` | Conversations (meta + messages per line) |
-| `data.json` | `activeConversationId`, `lastEnvHash`, model tracking |
+| `data.json` | `activeConversationId`, `lastEnvHash`, model tracking, `modelListCache` |
 
 **Command ID encoding**: `-` → `-_`, `/` → `--` (reversible, no collisions)
 
 ## Models & Thinking
 
-| Model | Default Thinking |
-|-------|------------------|
-| `claude-fable-5` / `fable` | Medium (8k) |
-| `claude-opus-4-8` / `opus` | Medium (8k) |
-| `claude-sonnet-4-6` / `sonnet` | Low (4k) |
+The model list is **fetched at runtime**, never hardcoded — a newly released
+model shows up without a plugin update.
+
+| Stage | Behavior |
+|-------|----------|
+| Fetch | `GET /v1/models` via `ANTHROPIC_API_KEY`, else `claude api get /v1/models` (subscription OAuth) |
+| Cache | Persisted to `data.json` (`modelListCache`), refreshed in the background when older than 6h |
+| Fallback | `DEFAULT_CLAUDE_MODELS` — offline only, never needs to be exhaustive |
+| Catalog | `ModelCatalog` groups ids by family/version into two tiers |
+
+**Two-tier catalog** (`src/core/models/ModelCatalog.ts`):
+
+| Tier | Contents |
+|------|----------|
+| `latest` | One entry per family, using the CLI alias (`fable`, `opus`, `sonnet`, `haiku`) so it resolves to the newest release at run time. The alias description shows the id it currently resolves to. A family with no CLI alias falls back to its newest pinned id. |
+| `previous` | Pinned ids — current + immediately previous version per family — hidden behind the "이전 모델 더보기" disclosure in the selector. |
+
+Model ids are parsed generically (`claude-opus-4-8` → family `opus`, version `[4, 8]`;
+legacy `claude-3-5-sonnet-20241022` and Bedrock/Vertex qualifiers are handled too),
+so unknown families and future versions sort and display correctly.
+
+**Default thinking budget** is resolved per family via `getDefaultThinkingBudget()`,
+so a new version inherits its family's budget:
+
+| Family | Default Thinking |
+|--------|------------------|
+| `fable` | Medium (8k) |
+| `opus` | Medium (8k) |
+| `sonnet` | Low (4k) |
 | `haiku` | Off |
+| unknown | Medium (8k) |
 
 Default model: `fable` (CLI alias — always resolves to the latest Fable).
 
-Custom models via env vars: `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_*_MODEL`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`
+Saved model ids are preserved by `migrateModel()` as long as they parse as real
+ids, so a model chosen after this build shipped survives a restart; only retired
+pinned ids are redirected to their family alias.
+
+Custom models via env vars: `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_*_MODEL`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`.
+A custom `ANTHROPIC_BASE_URL` switches the selector to env-declared models only;
+otherwise they are appended to the `previous` tier.
 
 ## Features
 

@@ -24,18 +24,23 @@ describe('migrateModel', () => {
     expect(migrateModel('haiku')).toBe('haiku');
   });
 
-  it('maps superseded pinned opus to the current pinned opus', () => {
-    expect(migrateModel('claude-opus-4-7')).toBe('claude-opus-4-8');
+  it('redirects retired pinned IDs to their family alias', () => {
+    expect(migrateModel('claude-opus-4-7')).toBe('opus');
+    expect(migrateModel('claude-opus-4-6')).toBe('opus');
+    expect(migrateModel('claude-opus-4-5')).toBe('opus');
+    expect(migrateModel('claude-sonnet-4-5')).toBe('sonnet');
   });
 
-  it('falls back to the default model for removed legacy models', () => {
-    expect(migrateModel('claude-opus-4-6')).toBe('fable');
-    expect(migrateModel('claude-haiku-4-5')).toBe('fable');
-    expect(migrateModel('claude-sonnet-4-5')).toBe('fable');
+  it('preserves model IDs this build has never heard of', () => {
+    // Models released after this build shipped must survive the migration.
+    expect(migrateModel('claude-opus-9')).toBe('claude-opus-9');
+    expect(migrateModel('claude-lyric-1')).toBe('claude-lyric-1');
+    expect(migrateModel('claude-haiku-4-5')).toBe('claude-haiku-4-5');
   });
 
   it('falls back to the default model for unknown strings and empty input', () => {
     expect(migrateModel('claude-2.1')).toBe('fable');
+    expect(migrateModel('some model name')).toBe('fable');
     expect(migrateModel('')).toBe('fable');
   });
 });

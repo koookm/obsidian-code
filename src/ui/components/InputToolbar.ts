@@ -4,6 +4,8 @@
 
 import { Notice, setIcon } from 'obsidian';
 
+import type { CatalogEntry, ModelCatalog, RawModelEntry } from '../../core/models/ModelCatalog';
+import { findCatalogEntry, resolveModelCatalog } from '../../core/models/ModelCatalog';
 import type {
   ClaudeModel,
   ObsidianCodeMcpServer,
@@ -16,7 +18,6 @@ import {
 } from '../../core/types';
 import { CHECK_ICON_SVG, MCP_ICON_SVG } from '../../features/chat/constants';
 import type { McpService } from '../../features/mcp/McpService';
-import { getModelsFromEnvironment, parseEnvironmentVariables } from '../../utils/env';
 import { findConflictingPath } from '../../utils/externalContext';
 
 /** Settings access interface for toolbar components. */
@@ -34,20 +35,30 @@ export interface ToolbarCallbacks {
   onPermissionModeChange: (mode: PermissionMode) => Promise<void>;
   getSettings: () => ToolbarSettings;
   getEnvironmentVariables?: () => string;
-  /** Returns the runtime-fetched model list (or null to use default). */
-  getRuntimeModels?: () => { value: string; label: string; description: string }[] | null;
+  /** Returns the model list fetched from the Anthropic API (null when unavailable). */
+  getRuntimeModels?: () => RawModelEntry[] | null;
+  /** Re-fetches the model list; resolves to false when the fetch fails. */
+  onRefreshModels?: () => Promise<boolean>;
   /** Whether plan mode was initiated by the agent (EnterPlanMode tool). */
   isAgentInitiatedPlanMode?: () => boolean;
   /** Whether the user has requested plan mode (UI/prefix only). */
   isPlanModeRequested?: () => boolean;
 }
 
-/** Model selector dropdown component. */
+/**
+ * Model selector dropdown.
+ *
+ * Shows one "latest" entry per model family — CLI aliases, so a new release is
+ * picked up with no plugin change — and hides pinned versions behind a "more"
+ * disclosure.
+ */
 export class ModelSelector {
   private container: HTMLElement;
   private buttonEl: HTMLElement | null = null;
   private dropdownEl: HTMLElement | null = null;
   private callbacks: ToolbarCallbacks;
+  private showMore = false;
+  private isRefreshing = false;
 
   constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
     this.callbacks = callbacks;
@@ -55,28 +66,13 @@ export class ModelSelector {
     this.render();
   }
 
-  /** Returns available models: runtime-fetched > env var custom > default hardcoded. */
-  private getAvailableModels() {
-    // 1. Runtime-fetched models from Anthropic API (via CLI) take highest priority
-    if (this.callbacks.getRuntimeModels) {
-      const runtimeModels = this.callbacks.getRuntimeModels();
-      if (runtimeModels && runtimeModels.length > 0) {
-        return runtimeModels;
-      }
-    }
-
-    // 2. Custom models from environment variables
-    if (this.callbacks.getEnvironmentVariables) {
-      const envVarsStr = this.callbacks.getEnvironmentVariables();
-      const envVars = parseEnvironmentVariables(envVarsStr);
-      const customModels = getModelsFromEnvironment(envVars);
-      if (customModels.length > 0) {
-        return customModels;
-      }
-    }
-
-    // 3. Hardcoded default list
-    return [...DEFAULT_CLAUDE_MODELS];
+  /** Builds the catalog from the fetched list, env vars, and offline fallback. */
+  private getCatalog(): ModelCatalog {
+    return resolveModelCatalog({
+      runtimeModels: this.callbacks.getRuntimeModels?.() ?? null,
+      envText: this.callbacks.getEnvironmentVariables?.() ?? '',
+      fallbackModels: DEFAULT_CLAUDE_MODELS,
+    });
   }
 
   private render() {
@@ -92,15 +88,40 @@ export class ModelSelector {
   updateDisplay() {
     if (!this.buttonEl) return;
     const currentModel = this.callbacks.getSettings().model;
-    const models = this.getAvailableModels();
-    const modelInfo = models.find(m => m.value === currentModel);
-
-    const displayModel = modelInfo || models[0];
+    const entry = findCatalogEntry(this.getCatalog(), currentModel);
 
     this.buttonEl.empty();
 
     const labelEl = this.buttonEl.createSpan({ cls: 'oc-model-label' });
-    labelEl.setText(displayModel?.label || 'Unknown');
+    labelEl.setText(entry.label || currentModel || 'Unknown');
+    if (entry.resolvedId) {
+      this.buttonEl.setAttribute('title', `${entry.label} → ${entry.resolvedId}`);
+    } else {
+      this.buttonEl.setAttribute('title', entry.value);
+    }
+  }
+
+  /** Renders a single selectable model row. */
+  private renderOption(parentEl: HTMLElement, model: CatalogEntry, currentModel: string) {
+    const option = parentEl.createDiv({ cls: 'oc-model-option' });
+    if (model.value === currentModel) {
+      option.addClass('selected');
+    }
+
+    option.createSpan({ text: model.label });
+    if (model.description) {
+      option.setAttribute('title', `${model.value} — ${model.description}`);
+      option.createSpan({ cls: 'oc-model-desc', text: model.description });
+    } else {
+      option.setAttribute('title', model.value);
+    }
+
+    option.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await this.callbacks.onModelChange(model.value);
+      this.updateDisplay();
+      this.renderOptions();
+    });
   }
 
   renderOptions() {
@@ -108,27 +129,52 @@ export class ModelSelector {
     this.dropdownEl.empty();
 
     const currentModel = this.callbacks.getSettings().model;
-    const models = this.getAvailableModels();
+    const catalog = this.getCatalog();
 
-    for (const model of [...models].reverse()) {
-      const option = this.dropdownEl.createDiv({ cls: 'oc-model-option' });
-      if (model.value === currentModel) {
-        option.addClass('selected');
-      }
+    for (const model of catalog.latest) {
+      this.renderOption(this.dropdownEl, model, currentModel);
+    }
 
-      option.createSpan({ text: model.label });
-      if (model.description) {
-        option.setAttribute('title', model.description);
-        option.createSpan({ cls: 'oc-model-desc', text: model.description });
-      }
+    if (catalog.previous.length === 0) return;
 
-      option.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        await this.callbacks.onModelChange(model.value);
+    // Keep the older pinned versions expanded when one of them is selected.
+    const selectedInPrevious = catalog.previous.some((m) => m.value === currentModel);
+    const expanded = this.showMore || selectedInPrevious;
+
+    const toggle = this.dropdownEl.createDiv({ cls: 'oc-model-more-toggle' });
+    toggle.createSpan({ text: expanded ? '이전 모델 숨기기' : '이전 모델 더보기' });
+    toggle.createSpan({ cls: 'oc-model-more-chevron', text: expanded ? '▴' : '▾' });
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.showMore = !expanded;
+      this.renderOptions();
+    });
+
+    if (!expanded) return;
+
+    const moreSection = this.dropdownEl.createDiv({ cls: 'oc-model-more-section' });
+    for (const model of catalog.previous) {
+      this.renderOption(moreSection, model, currentModel);
+    }
+
+    if (!this.callbacks.onRefreshModels) return;
+
+    const refresh = moreSection.createDiv({ cls: 'oc-model-refresh' });
+    refresh.setText(this.isRefreshing ? '모델 목록 불러오는 중...' : '모델 목록 새로고침');
+    refresh.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (this.isRefreshing) return;
+      this.isRefreshing = true;
+      this.renderOptions();
+      try {
+        const ok = await this.callbacks.onRefreshModels?.();
+        new Notice(ok ? '✓ 모델 목록을 새로고침했습니다.' : '모델 목록을 가져오지 못했습니다.');
+      } finally {
+        this.isRefreshing = false;
         this.updateDisplay();
         this.renderOptions();
-      });
-    }
+      }
+    });
   }
 }
 

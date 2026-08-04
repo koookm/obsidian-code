@@ -10,7 +10,10 @@ import { Notice, Plugin } from 'obsidian';
 
 import { ObsidianCodeService } from './core/agent/ObsidianCodeService';
 import { deleteCachedImages } from './core/images/imageCache';
+import type { ModelCatalog, RawModelEntry } from './core/models/ModelCatalog';
+import { resolveModelCatalog } from './core/models/ModelCatalog';
 import { StorageService } from './core/storage';
+import type { ModelListCache } from './core/storage/StorageService';
 import type {
   Conversation,
   ConversationMeta,
@@ -36,6 +39,9 @@ import {
   formatSummaryAsMarkdown,
 } from './utils/noteExport';
 
+/** How long a fetched model list is considered fresh (6 hours). */
+const MODEL_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
 /**
  * Main plugin class for ObsidianCode.
  * Handles plugin lifecycle, settings persistence, and conversation management.
@@ -47,27 +53,83 @@ export default class ObsidianCodePlugin extends Plugin {
   conversationSummaryService: ConversationSummaryService;
   storage: StorageService;
   cliResolver: ClaudeCliResolver;
-  /** Runtime-cached model list fetched from the Claude CLI (not persisted). */
-  runtimeAvailableModels: { value: string; label: string; description: string }[] | null = null;
+  /** Model list fetched from the Anthropic API (restored from the on-disk cache on load). */
+  runtimeAvailableModels: RawModelEntry[] | null = null;
+  /** Epoch millis of the last successful model list fetch (0 = never). */
+  modelsFetchedAt = 0;
   private conversations: Conversation[] = [];
   private activeConversationId: string | null = null;
   private runtimeEnvironmentVariables = '';
   private hasNotifiedEnvChange = false;
+  private modelRefreshPromise: Promise<boolean> | null = null;
 
-  /** Fetch the latest available models from Anthropic API and cache them at runtime. */
+  /** Fetch the latest available models from the Anthropic API and cache them. */
   async refreshAvailableModels(): Promise<boolean> {
-    const cliPath = this.getResolvedClaudeCliPath() ?? '';
-    const models = await fetchModelsFromCLI(cliPath);
-    if (models) {
+    // Coalesce concurrent refreshes (startup auto-refresh + manual button).
+    if (this.modelRefreshPromise) return this.modelRefreshPromise;
+
+    this.modelRefreshPromise = (async () => {
+      const cliPath = this.getResolvedClaudeCliPath() ?? '';
+      const models = await fetchModelsFromCLI(cliPath);
+      if (!models || models.length === 0) return false;
+
       this.runtimeAvailableModels = models;
+      this.modelsFetchedAt = Date.now();
+      await this.storage.updateState({
+        modelListCache: { models, fetchedAt: this.modelsFetchedAt },
+      });
+      this.refreshModelSelectors();
       return true;
+    })();
+
+    try {
+      return await this.modelRefreshPromise;
+    } finally {
+      this.modelRefreshPromise = null;
     }
-    return false;
   }
 
-  /** Returns the current model list: runtime-fetched > default hardcoded. */
-  getAvailableModels(): { value: string; label: string; description: string }[] {
+  /**
+   * Refreshes the model list in the background when the cache is stale.
+   * Failures are silent — the cached or fallback list stays in use.
+   */
+  private async refreshAvailableModelsIfStale(): Promise<void> {
+    const age = Date.now() - this.modelsFetchedAt;
+    if (this.runtimeAvailableModels && age < MODEL_CACHE_TTL_MS) return;
+    try {
+      await this.refreshAvailableModels();
+    } catch {
+      /* offline or not logged in — keep the cached/fallback list */
+    }
+  }
+
+  /** Restores the persisted model list so the newest models are available immediately. */
+  private restoreModelListCache(cache: ModelListCache | null): void {
+    if (!cache) return;
+    this.runtimeAvailableModels = cache.models;
+    this.modelsFetchedAt = cache.fetchedAt;
+  }
+
+  /** Re-renders the model selector in every open chat view. */
+  private refreshModelSelectors(): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_OBSIDIAN_CODE)) {
+      const view = leaf.view;
+      if (view instanceof ObsidianCodeView) view.refreshModelSelector();
+    }
+  }
+
+  /** Returns the raw model list: API-fetched > offline fallback. */
+  getAvailableModels(): RawModelEntry[] {
     return this.runtimeAvailableModels ?? DEFAULT_CLAUDE_MODELS;
+  }
+
+  /** Returns the tiered model catalog (latest per family + pinned versions). */
+  getModelCatalog(): ModelCatalog {
+    return resolveModelCatalog({
+      runtimeModels: this.runtimeAvailableModels,
+      envText: this.getActiveEnvironmentVariables(),
+      fallbackModels: DEFAULT_CLAUDE_MODELS,
+    });
   }
 
   async onload() {
@@ -83,6 +145,12 @@ export default class ObsidianCodePlugin extends Plugin {
     this.agentService = new ObsidianCodeService(this, this.mcpService.getManager());
 
     this.conversationSummaryService = new ConversationSummaryService(this);
+
+    // Pull the newest model list in the background so releases show up without
+    // a plugin update. Never blocks startup and never throws.
+    this.app.workspace.onLayoutReady(() => {
+      void this.refreshAvailableModelsIfStale();
+    });
 
     this.registerView(
       VIEW_TYPE_OBSIDIAN_CODE,
@@ -232,6 +300,9 @@ export default class ObsidianCodePlugin extends Plugin {
       slashCommands,
     };
 
+    // Model list persisted from the last successful fetch
+    this.restoreModelListCache(state.modelListCache);
+
     // Load all conversations from session files
     this.conversations = await this.storage.sessions.loadAllConversations();
     this.activeConversationId = state.activeConversationId;
@@ -294,6 +365,9 @@ export default class ObsidianCodePlugin extends Plugin {
       lastEnvHash: this.settings.lastEnvHash || '',
       lastClaudeModel: this.settings.lastClaudeModel || 'haiku',
       lastCustomModel: this.settings.lastCustomModel || '',
+      modelListCache: this.runtimeAvailableModels
+        ? { models: this.runtimeAvailableModels, fetchedAt: this.modelsFetchedAt }
+        : null,
     });
   }
 

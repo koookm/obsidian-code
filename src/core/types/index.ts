@@ -22,10 +22,25 @@ export {
   type ClaudeModel,
   DEFAULT_CLAUDE_MODELS,
   DEFAULT_MODEL,
-  DEFAULT_THINKING_BUDGET,
+  FAMILY_THINKING_BUDGET,
+  getDefaultThinkingBudget,
   THINKING_BUDGETS,
   type ThinkingBudget,
 } from './models';
+
+// Model catalog
+export {
+  buildModelCatalog,
+  type CatalogEntry,
+  CLI_ALIAS_FAMILIES,
+  findCatalogEntry,
+  formatModelLabel,
+  isPlausibleModelId,
+  type ModelCatalog,
+  parseModelId,
+  type RawModelEntry,
+  resolveModelCatalog,
+} from '../models/ModelCatalog';
 
 // SDK types
 export {

@@ -23160,12 +23160,212 @@ var VIEW_TYPE_OBSIDIAN_CODE = "obsidian-code-view";
 // src/core/types/models.ts
 var import_child_process2 = require("child_process");
 var import_util = require("util");
+
+// src/core/models/ModelCatalog.ts
+var CLI_ALIAS_FAMILIES = /* @__PURE__ */ new Set([
+  "fable",
+  "opus",
+  "sonnet",
+  "haiku"
+]);
+var FAMILY_RANK = {
+  fable: 0,
+  opus: 1,
+  sonnet: 2,
+  haiku: 3,
+  other: 99
+};
+var PREVIOUS_VERSIONS_PER_FAMILY = 2;
+function stripProviderPrefix(id) {
+  let out = id.trim().toLowerCase();
+  const slash = out.lastIndexOf("/");
+  if (slash >= 0) out = out.slice(slash + 1);
+  out = out.replace(/^(us|eu|apac)\./, "");
+  out = out.replace(/^anthropic\./, "");
+  out = out.replace(/-v\d+:\d+$/, "");
+  return out;
+}
+function parseModelId(id) {
+  const normalized = stripProviderPrefix(id).replace(/^claude[-.]/, "");
+  if (!normalized) return { family: "", version: [], date: null };
+  const tokens = normalized.split(/[-.]/).filter(Boolean);
+  const familyParts = [];
+  const version2 = [];
+  let date3 = null;
+  for (const token of tokens) {
+    if (/^\d{8}$/.test(token)) {
+      date3 = token;
+    } else if (/^\d+$/.test(token)) {
+      version2.push(Number(token));
+    } else if (token !== "latest" && token !== "v") {
+      familyParts.push(token);
+    }
+  }
+  return { family: familyParts.join("-"), version: version2, date: date3 };
+}
+function formatModelLabel(id) {
+  const { family, version: version2 } = parseModelId(id);
+  if (!family) return id;
+  const familyLabel = family.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+  const versionLabel = version2.join(".");
+  return versionLabel ? `Claude ${familyLabel} ${versionLabel}` : `Claude ${familyLabel}`;
+}
+function familyTitle(family) {
+  return family.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
+function compareParsed(a, b) {
+  var _a, _b, _c, _d;
+  const len = Math.max(a.version.length, b.version.length);
+  for (let i = 0; i < len; i++) {
+    const diff = ((_a = b.version[i]) != null ? _a : 0) - ((_b = a.version[i]) != null ? _b : 0);
+    if (diff !== 0) return diff;
+  }
+  return ((_c = b.date) != null ? _c : "").localeCompare((_d = a.date) != null ? _d : "");
+}
+function isClaudeModelId(id) {
+  if (!id) return false;
+  const trimmed = id.trim();
+  if (CLI_ALIAS_FAMILIES.has(trimmed)) return true;
+  return /^claude-/.test(trimmed) && !trimmed.includes("/");
+}
+function isPlausibleModelId(id) {
+  if (!id) return false;
+  const trimmed = id.trim();
+  if (!trimmed || trimmed.length > 100 || /\s/.test(trimmed)) return false;
+  if (trimmed.includes("/") || trimmed.includes(":")) return true;
+  const parsed = parseModelId(trimmed);
+  return parsed.family.length > 0 && (parsed.version.length > 0 || parsed.date !== null);
+}
+function groupByFamily(models) {
+  var _a;
+  const groups = /* @__PURE__ */ new Map();
+  for (const raw of models) {
+    if (!(raw == null ? void 0 : raw.value)) continue;
+    const parsed = parseModelId(raw.value);
+    if (parsed.version.length === 0 && !parsed.date) continue;
+    const family = parsed.family || "other";
+    const bucket = (_a = groups.get(family)) != null ? _a : [];
+    bucket.push({ raw, parsed });
+    groups.set(family, bucket);
+  }
+  for (const [family, bucket] of groups) {
+    bucket.sort((a, b) => compareParsed(a.parsed, b.parsed));
+    const byVersion = /* @__PURE__ */ new Map();
+    for (const entry of bucket) {
+      const key = entry.parsed.version.join(".");
+      const existing = byVersion.get(key);
+      if (!existing) {
+        byVersion.set(key, entry);
+      } else if (existing.parsed.date && !entry.parsed.date) {
+        byVersion.set(key, entry);
+      }
+    }
+    groups.set(family, [...byVersion.values()]);
+  }
+  return groups;
+}
+function sortFamilies(families) {
+  return [...families].sort((a, b) => {
+    var _a, _b;
+    const rankA = (_a = FAMILY_RANK[a]) != null ? _a : -1;
+    const rankB = (_b = FAMILY_RANK[b]) != null ? _b : -1;
+    if (rankA !== rankB) return rankA - rankB;
+    return a.localeCompare(b);
+  });
+}
+function buildModelCatalog(models, source = "default") {
+  const groups = groupByFamily(models);
+  const families = sortFamilies([...groups.keys()]);
+  const latest = [];
+  const previous = [];
+  for (const family of families) {
+    const entries = groups.get(family);
+    if (!entries || entries.length === 0) continue;
+    const top = entries[0];
+    const topLabel = top.raw.label || formatModelLabel(top.raw.value);
+    if (CLI_ALIAS_FAMILIES.has(family)) {
+      latest.push({
+        value: family,
+        label: `${familyTitle(family)} (Latest)`,
+        description: topLabel,
+        family,
+        isAlias: true,
+        resolvedId: top.raw.value
+      });
+    } else {
+      latest.push({
+        value: top.raw.value,
+        label: topLabel,
+        description: top.raw.description || "\uCD5C\uC2E0 \uBC84\uC804",
+        family,
+        isAlias: false
+      });
+    }
+    const pinned = CLI_ALIAS_FAMILIES.has(family) ? entries.slice(0, PREVIOUS_VERSIONS_PER_FAMILY) : entries.slice(1, PREVIOUS_VERSIONS_PER_FAMILY);
+    for (const entry of pinned) {
+      previous.push({
+        value: entry.raw.value,
+        label: entry.raw.label || formatModelLabel(entry.raw.value),
+        description: entry === top ? "\uD604\uC7AC \uBC84\uC804 \uACE0\uC815" : "\uC774\uC804 \uBC84\uC804 \uACE0\uC815",
+        family,
+        isAlias: false
+      });
+    }
+  }
+  return { latest, previous, all: [...latest, ...previous], source };
+}
+function flatCatalog(models, source) {
+  const latest = models.map((m) => ({
+    value: m.value,
+    label: m.label || formatModelLabel(m.value),
+    description: m.description || "",
+    family: parseModelId(m.value).family || "other",
+    isAlias: false
+  }));
+  return { latest, previous: [], all: latest, source };
+}
+function resolveModelCatalog(options) {
+  const envVars = options.envText ? parseEnvironmentVariables(options.envText) : {};
+  const envModels = options.envText ? getModelsFromEnvironment(envVars) : [];
+  const hasCustomEndpoint = Boolean(envVars["ANTHROPIC_BASE_URL"]);
+  if (envModels.length > 0 && hasCustomEndpoint) {
+    return flatCatalog(envModels, "env");
+  }
+  const runtime = options.runtimeModels;
+  const base = runtime && runtime.length > 0 ? runtime : options.fallbackModels;
+  const catalog = buildModelCatalog(base, runtime && runtime.length > 0 ? "api" : "default");
+  if (envModels.length === 0) return catalog;
+  const known = new Set(catalog.all.map((m) => m.value));
+  const extras = envModels.filter((m) => !known.has(m.value)).map((m) => ({
+    value: m.value,
+    label: m.label || formatModelLabel(m.value),
+    description: m.description || "\uD658\uACBD \uBCC0\uC218",
+    family: parseModelId(m.value).family || "other",
+    isAlias: false
+  }));
+  if (extras.length === 0) return catalog;
+  const previous = [...catalog.previous, ...extras];
+  return { ...catalog, previous, all: [...catalog.latest, ...previous] };
+}
+function findCatalogEntry(catalog, value) {
+  const found = catalog.all.find((m) => m.value === value);
+  if (found) return found;
+  return {
+    value,
+    label: formatModelLabel(value),
+    description: "",
+    family: parseModelId(value).family || "other",
+    isAlias: false
+  };
+}
+
+// src/core/types/models.ts
 var execFileAsync = (0, import_util.promisify)(import_child_process2.execFile);
 function parseModelList(data) {
   if (!(data == null ? void 0 : data.data) || !Array.isArray(data.data)) return null;
   const models = data.data.filter((m) => typeof m.id === "string" && m.id.startsWith("claude-")).sort((a, b) => b.id.localeCompare(a.id)).map((m) => ({
     value: m.id,
-    label: m.display_name || m.id.replace(/^claude-/, "Claude ").replace(/-(\d)/g, " $1").replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+    label: m.display_name || formatModelLabel(m.id),
     description: m.context_window ? `\uCEE8\uD14D\uC2A4\uD2B8 ${Math.round(m.context_window / 1e3)}k \uD1A0\uD070` : m.id
   }));
   return models.length > 0 ? models : null;
@@ -23196,17 +23396,12 @@ async function fetchModelsFromCLI(cliPath) {
   return null;
 }
 var DEFAULT_CLAUDE_MODELS = [
-  // --- Claude Fable 5 (최신) ---
-  { value: "claude-fable-5", label: "Claude Fable 5", description: "\uCD5C\uC2E0 \uD50C\uB798\uADF8\uC2ED \u2014 \uAC00\uC7A5 \uAC15\uB825\uD55C \uBAA8\uB378" },
-  // --- Claude 4.8 ---
-  { value: "claude-opus-4-8", label: "Claude Opus 4.8", description: "\uCD5C\uC2E0 Opus \u2014 \uBCF5\uC7A1\uD55C \uC791\uC5C5\uC5D0 \uCD5C\uC801" },
-  // --- Claude 4.6 ---
-  { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", description: "\uC131\uB2A5\uACFC \uC18D\uB3C4\uC758 \uADE0\uD615 \u2014 \uC77C\uBC18 \uC791\uC5C5 \uAD8C\uC7A5" },
-  // --- CLI 별칭 (항상 최신 버전으로 자동 해석) ---
-  { value: "fable", label: "Fable (Latest)", description: "Always points to the latest Fable via CLI" },
-  { value: "haiku", label: "Haiku (Latest)", description: "Always points to the latest Haiku via CLI" },
-  { value: "sonnet", label: "Sonnet (Latest)", description: "Always points to the latest Sonnet via CLI" },
-  { value: "opus", label: "Opus (Latest)", description: "Always points to the latest Opus via CLI" }
+  { value: "claude-fable-5", label: "Claude Fable 5", description: "\uD50C\uB798\uADF8\uC2ED \u2014 \uAC00\uC7A5 \uAC15\uB825\uD55C \uBAA8\uB378" },
+  { value: "claude-opus-5", label: "Claude Opus 5", description: "Opus \u2014 \uBCF5\uC7A1\uD55C \uC791\uC5C5\uC5D0 \uCD5C\uC801" },
+  { value: "claude-opus-4-8", label: "Claude Opus 4.8", description: "\uC774\uC804 Opus" },
+  { value: "claude-sonnet-5", label: "Claude Sonnet 5", description: "\uC131\uB2A5\uACFC \uC18D\uB3C4\uC758 \uADE0\uD615" },
+  { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", description: "\uC774\uC804 Sonnet" },
+  { value: "claude-haiku-4-5", label: "Claude Haiku 4.5", description: "\uAC00\uC7A5 \uBE60\uB978 \uACBD\uB7C9 \uBAA8\uB378" }
 ];
 var DEFAULT_MODEL = "fable";
 var THINKING_BUDGETS = [
@@ -23216,21 +23411,19 @@ var THINKING_BUDGETS = [
   { value: "high", label: "High", tokens: 16e3 },
   { value: "xhigh", label: "Ultra", tokens: 32e3 }
 ];
-var DEFAULT_THINKING_BUDGET = {
-  // CLI 별칭
-  "fable": "medium",
-  "haiku": "off",
-  "sonnet": "low",
-  "opus": "medium",
-  // Claude Fable 5
-  "claude-fable-5": "medium",
-  // Claude 4.8
-  "claude-opus-4-8": "medium",
-  // Claude 4.7 (legacy)
-  "claude-opus-4-7": "medium",
-  // Claude 4.6
-  "claude-sonnet-4-6": "low"
+var FAMILY_THINKING_BUDGET = {
+  fable: "medium",
+  opus: "medium",
+  sonnet: "low",
+  haiku: "off"
 };
+var FALLBACK_THINKING_BUDGET = "medium";
+function getDefaultThinkingBudget(model) {
+  var _a;
+  if (!model) return FALLBACK_THINKING_BUDGET;
+  const { family } = parseModelId(model);
+  return (_a = FAMILY_THINKING_BUDGET[family]) != null ? _a : FALLBACK_THINKING_BUDGET;
+}
 
 // src/core/types/settings.ts
 var UNIX_BLOCKED_COMMANDS = [
@@ -23326,16 +23519,18 @@ var DEFAULT_SETTINGS = {
   hooks: {},
   enableUserHooks: true
 };
-var ALLOWED_MODELS = new Set(DEFAULT_CLAUDE_MODELS.map((m) => m.value));
-var LEGACY_ALIASES = /* @__PURE__ */ new Set(["sonnet", "opus", "haiku"]);
 var LEGACY_MODEL_MAP = {
-  "claude-opus-4-7": "claude-opus-4-8"
-  // superseded pinned IDs → current pinned ID
+  "claude-opus-4-7": "opus",
+  "claude-opus-4-6": "opus",
+  "claude-opus-4-5": "opus",
+  "claude-sonnet-4-5": "sonnet"
 };
 function migrateModel(saved) {
-  if (ALLOWED_MODELS.has(saved)) return saved;
-  if (LEGACY_ALIASES.has(saved)) return saved;
-  if (LEGACY_MODEL_MAP[saved]) return LEGACY_MODEL_MAP[saved];
+  const trimmed = typeof saved === "string" ? saved.trim() : "";
+  if (!trimmed) return DEFAULT_MODEL;
+  if (LEGACY_MODEL_MAP[trimmed]) return LEGACY_MODEL_MAP[trimmed];
+  if (CLI_ALIAS_FAMILIES.has(trimmed)) return trimmed;
+  if (isPlausibleModelId(trimmed)) return trimmed;
   return DEFAULT_MODEL;
 }
 
@@ -25916,8 +26111,19 @@ var DEFAULT_STATE = {
   activeConversationId: null,
   lastEnvHash: "",
   lastClaudeModel: "haiku",
-  lastCustomModel: ""
+  lastCustomModel: "",
+  modelListCache: null
 };
+function normalizeModelListCache(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const candidate = raw;
+  if (!Array.isArray(candidate.models) || typeof candidate.fetchedAt !== "number") return null;
+  const models = candidate.models.filter(
+    (m) => !!m && typeof m.value === "string" && m.value.length > 0
+  );
+  if (models.length === 0) return null;
+  return { models, fetchedAt: candidate.fetchedAt };
+}
 var StorageService = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -25987,7 +26193,8 @@ var StorageService = class {
       activeConversationId: legacyData.activeConversationId || null,
       lastEnvHash: legacyData.lastEnvHash || "",
       lastClaudeModel: legacyData.lastClaudeModel || "haiku",
-      lastCustomModel: legacyData.lastCustomModel || ""
+      lastCustomModel: legacyData.lastCustomModel || "",
+      modelListCache: null
     });
     return true;
   }
@@ -26009,7 +26216,8 @@ var StorageService = class {
         activeConversationId: (_a = data == null ? void 0 : data.activeConversationId) != null ? _a : DEFAULT_STATE.activeConversationId,
         lastEnvHash: (_b = data == null ? void 0 : data.lastEnvHash) != null ? _b : DEFAULT_STATE.lastEnvHash,
         lastClaudeModel: (_c = data == null ? void 0 : data.lastClaudeModel) != null ? _c : DEFAULT_STATE.lastClaudeModel,
-        lastCustomModel: (_d = data == null ? void 0 : data.lastCustomModel) != null ? _d : DEFAULT_STATE.lastCustomModel
+        lastCustomModel: (_d = data == null ? void 0 : data.lastCustomModel) != null ? _d : DEFAULT_STATE.lastCustomModel,
+        modelListCache: normalizeModelListCache(data == null ? void 0 : data.modelListCache)
       };
     } catch (e) {
       return { ...DEFAULT_STATE };
@@ -29047,27 +29255,20 @@ var ModelSelector = class {
   constructor(parentEl, callbacks) {
     this.buttonEl = null;
     this.dropdownEl = null;
+    this.showMore = false;
+    this.isRefreshing = false;
     this.callbacks = callbacks;
     this.container = parentEl.createDiv({ cls: "oc-model-selector" });
     this.render();
   }
-  /** Returns available models: runtime-fetched > env var custom > default hardcoded. */
-  getAvailableModels() {
-    if (this.callbacks.getRuntimeModels) {
-      const runtimeModels = this.callbacks.getRuntimeModels();
-      if (runtimeModels && runtimeModels.length > 0) {
-        return runtimeModels;
-      }
-    }
-    if (this.callbacks.getEnvironmentVariables) {
-      const envVarsStr = this.callbacks.getEnvironmentVariables();
-      const envVars = parseEnvironmentVariables(envVarsStr);
-      const customModels = getModelsFromEnvironment(envVars);
-      if (customModels.length > 0) {
-        return customModels;
-      }
-    }
-    return [...DEFAULT_CLAUDE_MODELS];
+  /** Builds the catalog from the fetched list, env vars, and offline fallback. */
+  getCatalog() {
+    var _a, _b, _c, _d, _e, _f;
+    return resolveModelCatalog({
+      runtimeModels: (_c = (_b = (_a = this.callbacks).getRuntimeModels) == null ? void 0 : _b.call(_a)) != null ? _c : null,
+      envText: (_f = (_e = (_d = this.callbacks).getEnvironmentVariables) == null ? void 0 : _e.call(_d)) != null ? _f : "",
+      fallbackModels: DEFAULT_CLAUDE_MODELS
+    });
   }
   render() {
     this.container.empty();
@@ -29079,35 +29280,78 @@ var ModelSelector = class {
   updateDisplay() {
     if (!this.buttonEl) return;
     const currentModel = this.callbacks.getSettings().model;
-    const models = this.getAvailableModels();
-    const modelInfo = models.find((m) => m.value === currentModel);
-    const displayModel = modelInfo || models[0];
+    const entry = findCatalogEntry(this.getCatalog(), currentModel);
     this.buttonEl.empty();
     const labelEl = this.buttonEl.createSpan({ cls: "oc-model-label" });
-    labelEl.setText((displayModel == null ? void 0 : displayModel.label) || "Unknown");
+    labelEl.setText(entry.label || currentModel || "Unknown");
+    if (entry.resolvedId) {
+      this.buttonEl.setAttribute("title", `${entry.label} \u2192 ${entry.resolvedId}`);
+    } else {
+      this.buttonEl.setAttribute("title", entry.value);
+    }
+  }
+  /** Renders a single selectable model row. */
+  renderOption(parentEl, model, currentModel) {
+    const option = parentEl.createDiv({ cls: "oc-model-option" });
+    if (model.value === currentModel) {
+      option.addClass("selected");
+    }
+    option.createSpan({ text: model.label });
+    if (model.description) {
+      option.setAttribute("title", `${model.value} \u2014 ${model.description}`);
+      option.createSpan({ cls: "oc-model-desc", text: model.description });
+    } else {
+      option.setAttribute("title", model.value);
+    }
+    option.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await this.callbacks.onModelChange(model.value);
+      this.updateDisplay();
+      this.renderOptions();
+    });
   }
   renderOptions() {
     if (!this.dropdownEl) return;
     this.dropdownEl.empty();
     const currentModel = this.callbacks.getSettings().model;
-    const models = this.getAvailableModels();
-    for (const model of [...models].reverse()) {
-      const option = this.dropdownEl.createDiv({ cls: "oc-model-option" });
-      if (model.value === currentModel) {
-        option.addClass("selected");
-      }
-      option.createSpan({ text: model.label });
-      if (model.description) {
-        option.setAttribute("title", model.description);
-        option.createSpan({ cls: "oc-model-desc", text: model.description });
-      }
-      option.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        await this.callbacks.onModelChange(model.value);
+    const catalog = this.getCatalog();
+    for (const model of catalog.latest) {
+      this.renderOption(this.dropdownEl, model, currentModel);
+    }
+    if (catalog.previous.length === 0) return;
+    const selectedInPrevious = catalog.previous.some((m) => m.value === currentModel);
+    const expanded = this.showMore || selectedInPrevious;
+    const toggle = this.dropdownEl.createDiv({ cls: "oc-model-more-toggle" });
+    toggle.createSpan({ text: expanded ? "\uC774\uC804 \uBAA8\uB378 \uC228\uAE30\uAE30" : "\uC774\uC804 \uBAA8\uB378 \uB354\uBCF4\uAE30" });
+    toggle.createSpan({ cls: "oc-model-more-chevron", text: expanded ? "\u25B4" : "\u25BE" });
+    toggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.showMore = !expanded;
+      this.renderOptions();
+    });
+    if (!expanded) return;
+    const moreSection = this.dropdownEl.createDiv({ cls: "oc-model-more-section" });
+    for (const model of catalog.previous) {
+      this.renderOption(moreSection, model, currentModel);
+    }
+    if (!this.callbacks.onRefreshModels) return;
+    const refresh = moreSection.createDiv({ cls: "oc-model-refresh" });
+    refresh.setText(this.isRefreshing ? "\uBAA8\uB378 \uBAA9\uB85D \uBD88\uB7EC\uC624\uB294 \uC911..." : "\uBAA8\uB378 \uBAA9\uB85D \uC0C8\uB85C\uACE0\uCE68");
+    refresh.addEventListener("click", async (e) => {
+      var _a, _b;
+      e.stopPropagation();
+      if (this.isRefreshing) return;
+      this.isRefreshing = true;
+      this.renderOptions();
+      try {
+        const ok = await ((_b = (_a = this.callbacks).onRefreshModels) == null ? void 0 : _b.call(_a));
+        new import_obsidian13.Notice(ok ? "\u2713 \uBAA8\uB378 \uBAA9\uB85D\uC744 \uC0C8\uB85C\uACE0\uCE68\uD588\uC2B5\uB2C8\uB2E4." : "\uBAA8\uB378 \uBAA9\uB85D\uC744 \uAC00\uC838\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
+      } finally {
+        this.isRefreshing = false;
         this.updateDisplay();
         this.renderOptions();
-      });
-    }
+      }
+    });
   }
 };
 var ThinkingBudgetSelector = class {
@@ -38859,6 +39103,12 @@ var ObsidianCodeView = class extends import_obsidian33.ItemView {
   getIcon() {
     return "terminal";
   }
+  /** Re-renders the model selector after the model list is refreshed. */
+  refreshModelSelector() {
+    var _a, _b;
+    (_a = this.modelSelector) == null ? void 0 : _a.updateDisplay();
+    (_b = this.modelSelector) == null ? void 0 : _b.renderOptions();
+  }
   async onOpen() {
     var _a, _b;
     const container = this.containerEl.children[1];
@@ -39090,6 +39340,7 @@ var ObsidianCodeView = class extends import_obsidian33.ItemView {
       }),
       getEnvironmentVariables: () => this.plugin.getActiveEnvironmentVariables(),
       getRuntimeModels: () => this.plugin.runtimeAvailableModels,
+      onRefreshModels: () => this.plugin.refreshAvailableModels(),
       isAgentInitiatedPlanMode: () => {
         var _a2, _b;
         return (_b = (_a2 = this.state.planModeState) == null ? void 0 : _a2.agentInitiated) != null ? _b : false;
@@ -39098,9 +39349,8 @@ var ObsidianCodeView = class extends import_obsidian33.ItemView {
       onModelChange: async (model) => {
         var _a2, _b, _c;
         this.plugin.settings.model = model;
-        const isDefaultModel = DEFAULT_CLAUDE_MODELS.find((m) => m.value === model);
-        if (isDefaultModel) {
-          this.plugin.settings.thinkingBudget = DEFAULT_THINKING_BUDGET[model];
+        if (isClaudeModelId(model)) {
+          this.plugin.settings.thinkingBudget = getDefaultThinkingBudget(model);
           this.plugin.settings.lastClaudeModel = model;
         } else {
           this.plugin.settings.lastCustomModel = model;
@@ -40384,10 +40634,7 @@ var ObsidianCodeSettingTab = class extends import_obsidian35.PluginSettingTab {
     if (this.plugin.settings.enableAutoTitleGeneration) {
       new import_obsidian35.Setting(containerEl).setName("Title generation model").setDesc("Model used for auto-generating conversation titles.").addDropdown((dropdown) => {
         dropdown.addOption("", "Auto (Haiku)");
-        const envVars = parseEnvironmentVariables(this.plugin.settings.environmentVariables);
-        const customModels = getModelsFromEnvironment(envVars);
-        const models = customModels.length > 0 ? customModels : DEFAULT_CLAUDE_MODELS;
-        for (const model of models) {
+        for (const model of this.plugin.getModelCatalog().all) {
           dropdown.addOption(model.value, model.label);
         }
         dropdown.setValue(this.plugin.settings.titleGenerationModel || "").onChange(async (value) => {
@@ -40654,8 +40901,9 @@ var ObsidianCodeSettingTab = class extends import_obsidian35.PluginSettingTab {
     new EnvSnippetManager(envSnippetsContainer, this.plugin);
     new import_obsidian35.Setting(containerEl).setName("\uBAA8\uB378 \uC120\uD0DD").setHeading();
     const availableModels = this.plugin.getAvailableModels();
-    const modelSource = this.plugin.runtimeAvailableModels ? `Anthropic API\uC5D0\uC11C ${availableModels.length}\uAC1C \uBAA8\uB378 \uB85C\uB4DC\uB428` : `\uAE30\uBCF8 \uBAA8\uB378 \uBAA9\uB85D \uC0AC\uC6A9 \uC911 (${availableModels.length}\uAC1C)`;
-    new import_obsidian35.Setting(containerEl).setName("\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uBAA8\uB378 \uC0C8\uB85C\uACE0\uCE68").setDesc(`\uD604\uC7AC: ${modelSource}. Anthropic API\uC5D0\uC11C \uCD5C\uC2E0 \uBAA8\uB378 \uBAA9\uB85D\uC744 \uAC00\uC838\uC635\uB2C8\uB2E4. (Claude Code CLI \uC778\uC99D(\uAD6C\uB3C5) \uB610\uB294 ANTHROPIC_API_KEY\uAC00 \uC788\uC73C\uBA74 \uC0AC\uC6A9 \uAC00\uB2A5\uD569\uB2C8\uB2E4.)`).addButton((button) => {
+    const fetchedAt = this.plugin.modelsFetchedAt;
+    const modelSource = this.plugin.runtimeAvailableModels ? `Anthropic API\uC5D0\uC11C ${availableModels.length}\uAC1C \uBAA8\uB378 \uB85C\uB4DC\uB428` + (fetchedAt ? ` (${new Date(fetchedAt).toLocaleString()} \uAE30\uC900)` : "") : `\uAE30\uBCF8 \uBAA8\uB378 \uBAA9\uB85D \uC0AC\uC6A9 \uC911 (${availableModels.length}\uAC1C)`;
+    new import_obsidian35.Setting(containerEl).setName("\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uBAA8\uB378 \uC0C8\uB85C\uACE0\uCE68").setDesc(`\uD604\uC7AC: ${modelSource}. \uBAA8\uB378 \uBAA9\uB85D\uC740 \uD50C\uB7EC\uADF8\uC778 \uC2DC\uC791 \uC2DC \uC790\uB3D9\uC73C\uB85C \uAC31\uC2E0\uB418\uBA70(6\uC2DC\uAC04 \uCE90\uC2DC), \uC0C8 \uBAA8\uB378\uC774 \uCD9C\uC2DC\uB418\uBA74 \uBCC4\uB3C4 \uC5C5\uB370\uC774\uD2B8 \uC5C6\uC774 \uBC18\uC601\uB429\uB2C8\uB2E4. (Claude Code CLI \uC778\uC99D(\uAD6C\uB3C5) \uB610\uB294 ANTHROPIC_API_KEY \uD544\uC694)`).addButton((button) => {
       button.setButtonText("\uBAA8\uB378 \uBAA9\uB85D \uAC00\uC838\uC624\uAE30").onClick(async () => {
         var _a, _b;
         button.setButtonText("\uBD88\uB7EC\uC624\uB294 \uC911...");
@@ -40670,12 +40918,20 @@ var ObsidianCodeSettingTab = class extends import_obsidian35.PluginSettingTab {
         this.display();
       });
     });
-    new import_obsidian35.Setting(containerEl).setName("\uAE30\uBCF8 \uBAA8\uB378").setDesc("\uCC44\uD305\uC5D0\uC11C \uC0AC\uC6A9\uD560 \uAE30\uBCF8 Claude \uBAA8\uB378").addDropdown((dropdown) => {
-      const models = this.plugin.getAvailableModels();
-      for (const model of models) {
-        dropdown.addOption(model.value, `${model.label}${model.description ? " \u2014 " + model.description : ""}`);
+    new import_obsidian35.Setting(containerEl).setName("\uAE30\uBCF8 \uBAA8\uB378").setDesc('\uCC44\uD305\uC5D0\uC11C \uC0AC\uC6A9\uD560 \uAE30\uBCF8 Claude \uBAA8\uB378. "(Latest)" \uD56D\uBAA9\uC740 CLI\uAC00 \uC2E4\uD589 \uC2DC\uC810\uC5D0 \uCD5C\uC2E0 \uBC84\uC804\uC73C\uB85C \uD574\uC11D\uD569\uB2C8\uB2E4.').addDropdown((dropdown) => {
+      const catalog = this.plugin.getModelCatalog();
+      for (const model of catalog.latest) {
+        const suffix = model.resolvedId ? ` \u2014 \uD604\uC7AC ${model.resolvedId}` : "";
+        dropdown.addOption(model.value, `${model.label}${suffix}`);
       }
-      dropdown.setValue(this.plugin.settings.model).onChange(async (value) => {
+      for (const model of catalog.previous) {
+        dropdown.addOption(model.value, `${model.label} (\uBC84\uC804 \uACE0\uC815)`);
+      }
+      const current = this.plugin.settings.model;
+      if (!catalog.all.some((m) => m.value === current)) {
+        dropdown.addOption(current, `${current} (\uC0AC\uC6A9\uC790 \uC9C0\uC815)`);
+      }
+      dropdown.setValue(current).onChange(async (value) => {
         this.plugin.settings.model = value;
         await this.plugin.saveSettings();
       });
@@ -40829,31 +41085,79 @@ async function appendMarkdownToFile(app, file, markdown) {
 }
 
 // src/main.ts
+var MODEL_CACHE_TTL_MS = 6 * 60 * 60 * 1e3;
 var ObsidianCodePlugin = class extends import_obsidian36.Plugin {
   constructor() {
     super(...arguments);
-    /** Runtime-cached model list fetched from the Claude CLI (not persisted). */
+    /** Model list fetched from the Anthropic API (restored from the on-disk cache on load). */
     this.runtimeAvailableModels = null;
+    /** Epoch millis of the last successful model list fetch (0 = never). */
+    this.modelsFetchedAt = 0;
     this.conversations = [];
     this.activeConversationId = null;
     this.runtimeEnvironmentVariables = "";
     this.hasNotifiedEnvChange = false;
+    this.modelRefreshPromise = null;
   }
-  /** Fetch the latest available models from Anthropic API and cache them at runtime. */
+  /** Fetch the latest available models from the Anthropic API and cache them. */
   async refreshAvailableModels() {
-    var _a;
-    const cliPath = (_a = this.getResolvedClaudeCliPath()) != null ? _a : "";
-    const models = await fetchModelsFromCLI(cliPath);
-    if (models) {
+    if (this.modelRefreshPromise) return this.modelRefreshPromise;
+    this.modelRefreshPromise = (async () => {
+      var _a;
+      const cliPath = (_a = this.getResolvedClaudeCliPath()) != null ? _a : "";
+      const models = await fetchModelsFromCLI(cliPath);
+      if (!models || models.length === 0) return false;
       this.runtimeAvailableModels = models;
+      this.modelsFetchedAt = Date.now();
+      await this.storage.updateState({
+        modelListCache: { models, fetchedAt: this.modelsFetchedAt }
+      });
+      this.refreshModelSelectors();
       return true;
+    })();
+    try {
+      return await this.modelRefreshPromise;
+    } finally {
+      this.modelRefreshPromise = null;
     }
-    return false;
   }
-  /** Returns the current model list: runtime-fetched > default hardcoded. */
+  /**
+   * Refreshes the model list in the background when the cache is stale.
+   * Failures are silent — the cached or fallback list stays in use.
+   */
+  async refreshAvailableModelsIfStale() {
+    const age = Date.now() - this.modelsFetchedAt;
+    if (this.runtimeAvailableModels && age < MODEL_CACHE_TTL_MS) return;
+    try {
+      await this.refreshAvailableModels();
+    } catch (e) {
+    }
+  }
+  /** Restores the persisted model list so the newest models are available immediately. */
+  restoreModelListCache(cache) {
+    if (!cache) return;
+    this.runtimeAvailableModels = cache.models;
+    this.modelsFetchedAt = cache.fetchedAt;
+  }
+  /** Re-renders the model selector in every open chat view. */
+  refreshModelSelectors() {
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_OBSIDIAN_CODE)) {
+      const view = leaf.view;
+      if (view instanceof ObsidianCodeView) view.refreshModelSelector();
+    }
+  }
+  /** Returns the raw model list: API-fetched > offline fallback. */
   getAvailableModels() {
     var _a;
     return (_a = this.runtimeAvailableModels) != null ? _a : DEFAULT_CLAUDE_MODELS;
+  }
+  /** Returns the tiered model catalog (latest per family + pinned versions). */
+  getModelCatalog() {
+    return resolveModelCatalog({
+      runtimeModels: this.runtimeAvailableModels,
+      envText: this.getActiveEnvironmentVariables(),
+      fallbackModels: DEFAULT_CLAUDE_MODELS
+    });
   }
   async onload() {
     await this.loadSettings();
@@ -40862,6 +41166,9 @@ var ObsidianCodePlugin = class extends import_obsidian36.Plugin {
     await this.mcpService.loadServers();
     this.agentService = new ObsidianCodeService(this, this.mcpService.getManager());
     this.conversationSummaryService = new ConversationSummaryService(this);
+    this.app.workspace.onLayoutReady(() => {
+      void this.refreshAvailableModelsIfStale();
+    });
     this.registerView(
       VIEW_TYPE_OBSIDIAN_CODE,
       (leaf) => new ObsidianCodeView(leaf, this)
@@ -40986,6 +41293,7 @@ var ObsidianCodePlugin = class extends import_obsidian36.Plugin {
       lastCustomModel: state.lastCustomModel,
       slashCommands
     };
+    this.restoreModelListCache(state.modelListCache);
     this.conversations = await this.storage.sessions.loadAllConversations();
     this.activeConversationId = state.activeConversationId;
     if (this.activeConversationId && !this.conversations.find((c) => c.id === this.activeConversationId)) {
@@ -41032,7 +41340,8 @@ var ObsidianCodePlugin = class extends import_obsidian36.Plugin {
       activeConversationId: this.activeConversationId,
       lastEnvHash: this.settings.lastEnvHash || "",
       lastClaudeModel: this.settings.lastClaudeModel || "haiku",
-      lastCustomModel: this.settings.lastCustomModel || ""
+      lastCustomModel: this.settings.lastCustomModel || "",
+      modelListCache: this.runtimeAvailableModels ? { models: this.runtimeAvailableModels, fetchedAt: this.modelsFetchedAt } : null
     });
   }
   /** Reloads slash commands from global and vault paths. */

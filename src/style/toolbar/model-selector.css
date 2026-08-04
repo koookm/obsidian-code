@@ -85,3 +85,53 @@
   font-weight: normal;
   opacity: 0.7;
 }
+/* "More models" disclosure — pinned versions stay out of the way */
+.oc-model-more-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 2px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.oc-model-more-toggle:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+}
+
+.oc-model-more-chevron {
+  font-size: 9px;
+  opacity: 0.8;
+}
+
+.oc-model-more-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 8px;
+  border-left: 2px solid var(--background-modifier-border);
+  margin-left: 4px;
+}
+
+.oc-model-refresh {
+  padding: 4px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.oc-model-refresh:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+}

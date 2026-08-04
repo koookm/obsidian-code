@@ -18,6 +18,7 @@ import type {
   ObsidianCodeSettings,
   SlashCommand,
 } from '../types';
+import type { RawModelEntry } from '../models/ModelCatalog';
 import { DEFAULT_SETTINGS } from '../types';
 import { McpStorage } from './McpStorage';
 import { SESSIONS_PATH, SessionStorage } from './SessionStorage';
@@ -28,12 +29,20 @@ import { VaultFileAdapter } from './VaultFileAdapter';
 /** Base path for all ObsidianCode storage. */
 export const CLAUDE_PATH = '.claude';
 
+/** Cached Anthropic model list, refreshed in the background. */
+export interface ModelListCache {
+  models: RawModelEntry[];
+  /** Epoch millis of the last successful fetch. */
+  fetchedAt: number;
+}
+
 /** Machine-specific state stored in Obsidian's data.json. */
 export interface PluginState {
   activeConversationId: string | null;
   lastEnvHash: string;
   lastClaudeModel: ClaudeModel;
   lastCustomModel: ClaudeModel;
+  modelListCache: ModelListCache | null;
 }
 
 /** Default plugin state. */
@@ -42,7 +51,22 @@ const DEFAULT_STATE: PluginState = {
   lastEnvHash: '',
   lastClaudeModel: 'haiku',
   lastCustomModel: '',
+  modelListCache: null,
 };
+
+/** Validates a persisted model list cache, discarding malformed data. */
+function normalizeModelListCache(raw: unknown): ModelListCache | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const candidate = raw as Partial<ModelListCache>;
+  if (!Array.isArray(candidate.models) || typeof candidate.fetchedAt !== 'number') return null;
+
+  const models = candidate.models.filter(
+    (m): m is RawModelEntry => !!m && typeof m.value === 'string' && m.value.length > 0
+  );
+  if (models.length === 0) return null;
+
+  return { models, fetchedAt: candidate.fetchedAt };
+}
 
 /** Legacy data format (pre-migration). */
 interface LegacyData extends ObsidianCodeSettings {
@@ -159,6 +183,7 @@ export class StorageService {
       lastEnvHash: legacyData.lastEnvHash || '',
       lastClaudeModel: legacyData.lastClaudeModel || 'haiku',
       lastCustomModel: legacyData.lastCustomModel || '',
+      modelListCache: null,
     });
 
     return true;
@@ -183,6 +208,7 @@ export class StorageService {
         lastEnvHash: data?.lastEnvHash ?? DEFAULT_STATE.lastEnvHash,
         lastClaudeModel: data?.lastClaudeModel ?? DEFAULT_STATE.lastClaudeModel,
         lastCustomModel: data?.lastCustomModel ?? DEFAULT_STATE.lastCustomModel,
+        modelListCache: normalizeModelListCache(data?.modelListCache),
       };
     } catch {
       return { ...DEFAULT_STATE };
