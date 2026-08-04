@@ -64,6 +64,9 @@ const context = await esbuild.context({
     '@lezer/highlight',
     '@lezer/lr',
     ...builtins,
+    // The Agent SDK imports builtins with the `node:` prefix, which does not
+    // match the bare names from `builtin-modules`.
+    ...builtins.map((name) => `node:${name}`),
   ],
   format: 'cjs',
   target: 'es2018',

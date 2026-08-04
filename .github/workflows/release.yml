@@ -18,6 +18,21 @@ jobs:
         with:
           fetch-depth: 0  # Full history for changelog generation
 
+      # A tag pointing at a commit whose manifest still carries the previous
+      # version ships the old plugin under a new name: Obsidian reads the
+      # version from manifest.json, not from the tag.
+      - name: Verify tag matches manifest version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG="${{ github.ref_name }}"
+          MANIFEST_VERSION=$(node -p "require('./manifest.json').version")
+          if [ "${TAG#v}" != "$MANIFEST_VERSION" ]; then
+            echo "::error::Tag $TAG points at a commit whose manifest.json says $MANIFEST_VERSION."
+            echo "Tag the commit that bumps the version (usually after merging the release PR)."
+            exit 1
+          fi
+          echo "Tag $TAG matches manifest version $MANIFEST_VERSION."
+
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:

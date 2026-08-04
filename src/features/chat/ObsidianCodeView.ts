@@ -272,6 +272,8 @@ export class ObsidianCodeView extends ItemView {
     this.titleGenerationService = null;
     this.todoPanel?.destroy();
     this.todoPanel = null;
+    this.modelSelector?.destroy();
+    this.modelSelector = null;
 
     // Cleanup OMC integration (no-ops if OMC was not installed)
     this.omcHUDProvider?.stop();

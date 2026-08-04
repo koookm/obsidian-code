@@ -32,6 +32,11 @@ export interface TransformOptions {
  * @param options - Optional transform options (intendedModel for usage selection)
  * @yields StreamChunk events for UI rendering, or SessionInitEvent for session tracking
  */
+/** Tool inputs arrive untyped from the SDK; normalize to a plain record. */
+function toToolInput(input: unknown): Record<string, unknown> {
+  return input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+}
+
 export function* transformSDKMessage(
   message: SDKMessage,
   options?: TransformOptions
@@ -62,7 +67,7 @@ export function* transformSDKMessage(
               type: 'tool_use',
               id: block.id || `tool-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
               name: block.name || 'unknown',
-              input: block.input || {},
+              input: toToolInput(block.input),
               parentToolUseId,
             };
           }
@@ -117,7 +122,7 @@ export function* transformSDKMessage(
           type: 'tool_use',
           id: event.content_block.id || `tool-${Date.now()}`,
           name: event.content_block.name || 'unknown',
-          input: event.content_block.input || {},
+          input: toToolInput(event.content_block.input),
           parentToolUseId,
         };
       } else if (event?.type === 'content_block_start' && event.content_block?.type === 'thinking') {

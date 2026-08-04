@@ -8,6 +8,7 @@
 import type { HookCallbackMatcher, Options } from '@anthropic-ai/claude-agent-sdk';
 import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 
+import { applyThinkingOptions } from '../../core/models/thinkingOptions';
 import { getInlineEditSystemPrompt } from '../../core/prompts/inlineEdit';
 import { getPathFromToolInput } from '../../core/tools/toolInput';
 import {
@@ -18,7 +19,6 @@ import {
   TOOL_LS,
   TOOL_READ,
 } from '../../core/tools/toolNames';
-import { THINKING_BUDGETS } from '../../core/types';
 import type ObsidianCodePlugin from '../../main';
 import { prependContextFiles } from '../../utils/context';
 import { type CursorContext } from '../../utils/editor';
@@ -132,11 +132,7 @@ export class InlineEditService {
       options.resume = this.sessionId;
     }
 
-    const budgetSetting = this.plugin.settings.thinkingBudget;
-    const budgetConfig = THINKING_BUDGETS.find(b => b.value === budgetSetting);
-    if (budgetConfig && budgetConfig.tokens > 0) {
-      options.maxThinkingTokens = budgetConfig.tokens;
-    }
+    applyThinkingOptions(options, this.plugin.settings.thinkingBudget);
 
     try {
       const response = agentQuery({ prompt, options });

@@ -46,19 +46,26 @@ export interface ToolbarCallbacks {
 }
 
 /**
- * Model selector dropdown.
+ * Model selector menu.
  *
- * Shows one "latest" entry per model family — CLI aliases, so a new release is
- * picked up with no plugin change — and hides pinned versions behind a "more"
- * disclosure.
+ * Mirrors the Claude Code model menu: a "Models" list showing one row per
+ * family named after the version it currently resolves to ("Opus 5"), with a
+ * number shortcut on each row and a checkmark on the active one. Pinned
+ * versions live in a "More models" submenu.
+ *
+ * The rows are CLI aliases, so when a new version ships the row renames itself
+ * and keeps resolving to the newest release with no plugin update.
  */
 export class ModelSelector {
   private container: HTMLElement;
   private buttonEl: HTMLElement | null = null;
   private dropdownEl: HTMLElement | null = null;
   private callbacks: ToolbarCallbacks;
-  private showMore = false;
+  private isOpen = false;
+  private view: 'root' | 'more' = 'root';
   private isRefreshing = false;
+  private onDocumentClick: ((e: MouseEvent) => void) | null = null;
+  private onDocumentKeyDown: ((e: KeyboardEvent) => void) | null = null;
 
   constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks) {
     this.callbacks = callbacks;
@@ -79,10 +86,92 @@ export class ModelSelector {
     this.container.empty();
 
     this.buttonEl = this.container.createDiv({ cls: 'oc-model-btn' });
+    this.buttonEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggle();
+    });
     this.updateDisplay();
 
     this.dropdownEl = this.container.createDiv({ cls: 'oc-model-dropdown' });
     this.renderOptions();
+  }
+
+  /** Opens or closes the menu. */
+  private toggle() {
+    if (this.isOpen) {
+      this.close();
+    } else {
+      this.open();
+    }
+  }
+
+  private open() {
+    if (this.isOpen) return;
+    this.isOpen = true;
+    this.view = 'root';
+    this.dropdownEl?.addClass('is-open');
+
+    // Close on any click outside, and drive the number shortcuts while open.
+    this.onDocumentClick = (e: MouseEvent) => {
+      if (!this.container.contains(e.target as Node)) this.close();
+    };
+    this.onDocumentKeyDown = (e: KeyboardEvent) => this.handleKeyDown(e);
+    document.addEventListener('click', this.onDocumentClick);
+    document.addEventListener('keydown', this.onDocumentKeyDown, true);
+
+    this.renderOptions();
+  }
+
+  private close() {
+    if (!this.isOpen) return;
+    this.isOpen = false;
+    this.view = 'root';
+    this.dropdownEl?.removeClass('is-open');
+
+    if (this.onDocumentClick) {
+      document.removeEventListener('click', this.onDocumentClick);
+      this.onDocumentClick = null;
+    }
+    if (this.onDocumentKeyDown) {
+      document.removeEventListener('keydown', this.onDocumentKeyDown, true);
+      this.onDocumentKeyDown = null;
+    }
+
+    this.renderOptions();
+  }
+
+  /** Number keys pick a model; Escape closes. */
+  private handleKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      this.close();
+      return;
+    }
+
+    if (this.view !== 'root') return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (!/^[1-9]$/.test(e.key)) return;
+
+    const entries = this.getCatalog().latest;
+    const entry = entries[Number(e.key) - 1];
+    if (!entry) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    void this.select(entry.value);
+  }
+
+  /** Applies a model choice and closes the menu. */
+  private async select(value: string) {
+    await this.callbacks.onModelChange(value);
+    this.close();
+    this.updateDisplay();
+  }
+
+  /** Removes document listeners; call when the view is torn down. */
+  destroy() {
+    this.close();
   }
 
   updateDisplay() {
@@ -94,33 +183,37 @@ export class ModelSelector {
 
     const labelEl = this.buttonEl.createSpan({ cls: 'oc-model-label' });
     labelEl.setText(entry.label || currentModel || 'Unknown');
-    if (entry.resolvedId) {
-      this.buttonEl.setAttribute('title', `${entry.label} → ${entry.resolvedId}`);
-    } else {
-      this.buttonEl.setAttribute('title', entry.value);
-    }
+    this.buttonEl.setAttribute('title', entry.description || entry.value);
   }
 
-  /** Renders a single selectable model row. */
-  private renderOption(parentEl: HTMLElement, model: CatalogEntry, currentModel: string) {
+  /**
+   * Renders one model row.
+   * `hint` is the number shortcut; the active row shows a check instead.
+   */
+  private renderOption(
+    parentEl: HTMLElement,
+    model: CatalogEntry,
+    currentModel: string,
+    hint?: string
+  ) {
     const option = parentEl.createDiv({ cls: 'oc-model-option' });
-    if (model.value === currentModel) {
-      option.addClass('selected');
-    }
+    const isSelected = model.value === currentModel;
+    if (isSelected) option.addClass('selected');
 
-    option.createSpan({ text: model.label });
-    if (model.description) {
-      option.setAttribute('title', `${model.value} — ${model.description}`);
-      option.createSpan({ cls: 'oc-model-desc', text: model.description });
-    } else {
-      option.setAttribute('title', model.value);
+    option.createSpan({ cls: 'oc-model-option-label', text: model.label });
+    option.setAttribute('title', model.description || model.value);
+
+    const hintEl = option.createSpan({ cls: 'oc-model-option-hint' });
+    if (isSelected) {
+      hintEl.addClass('oc-model-option-check');
+      setIcon(hintEl, 'check');
+    } else if (hint) {
+      hintEl.setText(hint);
     }
 
     option.addEventListener('click', async (e) => {
       e.stopPropagation();
-      await this.callbacks.onModelChange(model.value);
-      this.updateDisplay();
-      this.renderOptions();
+      await this.select(model.value);
     });
   }
 
@@ -131,35 +224,65 @@ export class ModelSelector {
     const currentModel = this.callbacks.getSettings().model;
     const catalog = this.getCatalog();
 
-    for (const model of catalog.latest) {
-      this.renderOption(this.dropdownEl, model, currentModel);
+    if (this.view === 'more') {
+      this.renderMoreView(catalog, currentModel);
+      return;
     }
+
+    this.dropdownEl.createDiv({ cls: 'oc-model-menu-header', text: 'Models' });
+
+    catalog.latest.forEach((model, index) => {
+      this.renderOption(
+        this.dropdownEl as HTMLElement,
+        model,
+        currentModel,
+        index < 9 ? String(index + 1) : undefined
+      );
+    });
 
     if (catalog.previous.length === 0) return;
 
-    // Keep the older pinned versions expanded when one of them is selected.
-    const selectedInPrevious = catalog.previous.some((m) => m.value === currentModel);
-    const expanded = this.showMore || selectedInPrevious;
+    this.dropdownEl.createDiv({ cls: 'oc-model-menu-divider' });
 
-    const toggle = this.dropdownEl.createDiv({ cls: 'oc-model-more-toggle' });
-    toggle.createSpan({ text: expanded ? '이전 모델 숨기기' : '이전 모델 더보기' });
-    toggle.createSpan({ cls: 'oc-model-more-chevron', text: expanded ? '▴' : '▾' });
-    toggle.addEventListener('click', (e) => {
+    const more = this.dropdownEl.createDiv({ cls: 'oc-model-option oc-model-more-row' });
+    more.createSpan({ cls: 'oc-model-option-label', text: 'More models' });
+    const chevron = more.createSpan({ cls: 'oc-model-option-hint' });
+    setIcon(chevron, 'chevron-right');
+    // A pinned selection lives in the submenu — mark the entry point so the
+    // active model is never invisible from the root view.
+    if (catalog.previous.some((m) => m.value === currentModel)) {
+      more.addClass('has-selected');
+    }
+    more.addEventListener('click', (e) => {
       e.stopPropagation();
-      this.showMore = !expanded;
+      this.view = 'more';
+      this.renderOptions();
+    });
+  }
+
+  /** The "More models" submenu: pinned versions plus a manual refresh. */
+  private renderMoreView(catalog: ModelCatalog, currentModel: string) {
+    if (!this.dropdownEl) return;
+
+    const back = this.dropdownEl.createDiv({ cls: 'oc-model-menu-header oc-model-menu-back' });
+    const backIcon = back.createSpan({ cls: 'oc-model-back-icon' });
+    setIcon(backIcon, 'chevron-left');
+    back.createSpan({ text: 'Models' });
+    back.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.view = 'root';
       this.renderOptions();
     });
 
-    if (!expanded) return;
-
-    const moreSection = this.dropdownEl.createDiv({ cls: 'oc-model-more-section' });
     for (const model of catalog.previous) {
-      this.renderOption(moreSection, model, currentModel);
+      this.renderOption(this.dropdownEl, model, currentModel);
     }
 
     if (!this.callbacks.onRefreshModels) return;
 
-    const refresh = moreSection.createDiv({ cls: 'oc-model-refresh' });
+    this.dropdownEl.createDiv({ cls: 'oc-model-menu-divider' });
+
+    const refresh = this.dropdownEl.createDiv({ cls: 'oc-model-refresh' });
     refresh.setText(this.isRefreshing ? '모델 목록 불러오는 중...' : '모델 목록 새로고침');
     refresh.addEventListener('click', async (e) => {
       e.stopPropagation();

@@ -119,6 +119,15 @@ export function parseModelId(id: string): ParsedModelId {
 
 /** Human-readable label for a model id, e.g. `claude-opus-4-8` → `Claude Opus 4.8`. */
 export function formatModelLabel(id: string): string {
+  const short = formatModelShortLabel(id);
+  return short === id ? id : `Claude ${short}`;
+}
+
+/**
+ * Compact label without the `Claude` prefix, e.g. `claude-opus-4-8` → `Opus 4.8`.
+ * Used in the model menu, where the vendor prefix is noise on every row.
+ */
+export function formatModelShortLabel(id: string): string {
   const { family, version } = parseModelId(id);
   if (!family) return id;
 
@@ -127,7 +136,7 @@ export function formatModelLabel(id: string): string {
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
   const versionLabel = version.join('.');
-  return versionLabel ? `Claude ${familyLabel} ${versionLabel}` : `Claude ${familyLabel}`;
+  return versionLabel ? `${familyLabel} ${versionLabel}` : familyLabel;
 }
 
 /** Title-cased family name, e.g. `opus` → `Opus`. */
@@ -237,13 +246,14 @@ export function buildModelCatalog(
     if (!entries || entries.length === 0) continue;
 
     const top = entries[0];
-    const topLabel = top.raw.label || formatModelLabel(top.raw.value);
 
     if (CLI_ALIAS_FAMILIES.has(family)) {
+      // The row is named after the version the alias resolves to right now, so
+      // it reads as "Opus 5" and renames itself when Opus 6 ships.
       latest.push({
         value: family,
-        label: `${familyTitle(family)} (Latest)`,
-        description: topLabel,
+        label: formatModelShortLabel(top.raw.value),
+        description: `항상 최신 ${familyTitle(family)}로 연결 (현재 ${top.raw.value})`,
         family,
         isAlias: true,
         resolvedId: top.raw.value,
@@ -251,8 +261,8 @@ export function buildModelCatalog(
     } else {
       latest.push({
         value: top.raw.value,
-        label: topLabel,
-        description: top.raw.description || '최신 버전',
+        label: formatModelShortLabel(top.raw.value),
+        description: top.raw.description || top.raw.value,
         family,
         isAlias: false,
       });
@@ -267,8 +277,9 @@ export function buildModelCatalog(
     for (const entry of pinned) {
       previous.push({
         value: entry.raw.value,
-        label: entry.raw.label || formatModelLabel(entry.raw.value),
-        description: entry === top ? '현재 버전 고정' : '이전 버전 고정',
+        label: formatModelShortLabel(entry.raw.value),
+        // The full id is the point of this tier: it pins the version.
+        description: entry.raw.value,
         family,
         isAlias: false,
       });
@@ -282,7 +293,7 @@ export function buildModelCatalog(
 function flatCatalog(models: RawModelEntry[], source: ModelCatalog['source']): ModelCatalog {
   const latest = models.map((m) => ({
     value: m.value,
-    label: m.label || formatModelLabel(m.value),
+    label: m.label || formatModelShortLabel(m.value),
     description: m.description || '',
     family: parseModelId(m.value).family || 'other',
     isAlias: false,
@@ -328,7 +339,7 @@ export function resolveModelCatalog(options: ResolveCatalogOptions): ModelCatalo
     .filter((m) => !known.has(m.value))
     .map((m) => ({
       value: m.value,
-      label: m.label || formatModelLabel(m.value),
+      label: m.label || formatModelShortLabel(m.value),
       description: m.description || '환경 변수',
       family: parseModelId(m.value).family || 'other',
       isAlias: false,
@@ -346,7 +357,7 @@ export function findCatalogEntry(catalog: ModelCatalog, value: string): CatalogE
   if (found) return found;
   return {
     value,
-    label: formatModelLabel(value),
+    label: formatModelShortLabel(value),
     description: '',
     family: parseModelId(value).family || 'other',
     isAlias: false,

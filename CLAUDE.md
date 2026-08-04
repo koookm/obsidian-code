@@ -17,7 +17,8 @@ src/
 │   ├── mcp/                     # MCP server config management
 │   │   └── McpServerManager.ts
 │   ├── models/                  # Dynamic model catalog (id parsing, tiering)
-│   │   └── ModelCatalog.ts
+│   │   ├── ModelCatalog.ts
+│   │   └── thinkingOptions.ts
 │   ├── prompts/                 # System prompts for agents
 │   ├── sdk/                     # SDK message transformation
 │   ├── security/                # Approval, blocklist, path validation
@@ -56,7 +57,7 @@ src/
 | | `hooks/` | Security and diff tracking hooks |
 | | `images/` | Image caching with SHA-256 dedup |
 | | `mcp/` | MCP server config loading and filtering (McpServerManager) |
-| | `models/` | Model id parsing and two-tier catalog (ModelCatalog) |
+| | `models/` | Model id parsing, two-tier catalog (ModelCatalog), SDK thinking options |
 | | `prompts/` | System prompts (main agent, inline edit, instruction refine, title generation) |
 | | `sdk/` | SDK message transformation |
 | | `security/` | Approval, blocklist, path validation |
@@ -132,7 +133,7 @@ const options: Options = {
   abortController: this.abortController,
   pathToClaudeCodeExecutable: '/path/to/claude',
   resume: sessionId,
-  maxThinkingTokens: budgetConfig.tokens, // Optional extended thinking
+  thinking: { type: 'enabled', budgetTokens: 8000 }, // see core/models/thinkingOptions.ts
 };
 
 const response = query({ prompt, options });
@@ -259,8 +260,24 @@ model shows up without a plugin update.
 
 | Tier | Contents |
 |------|----------|
-| `latest` | One entry per family, using the CLI alias (`fable`, `opus`, `sonnet`, `haiku`) so it resolves to the newest release at run time. The alias description shows the id it currently resolves to. A family with no CLI alias falls back to its newest pinned id. |
-| `previous` | Pinned ids — current + immediately previous version per family — hidden behind the "이전 모델 더보기" disclosure in the selector. |
+| `latest` | One entry per family, using the CLI alias (`fable`, `opus`, `sonnet`, `haiku`) so it resolves to the newest release at run time. The row is **named after the version the alias currently resolves to** (`Opus 5`), so it renames itself when a new version ships. A family with no CLI alias falls back to its newest pinned id. |
+| `previous` | Pinned ids — current + immediately previous version per family — shown in the "More models" submenu with their full id. |
+
+**Selector UI** mirrors the Claude Code model menu:
+
+```
+Models
+  Fable 5                    1
+  Opus 5                     ✓
+  Sonnet 5                   3
+  Haiku 4.5                  4
+  ─────────────────────
+  More models                ›
+```
+
+- Click the button to open; outside click or `Escape` closes it.
+- Number keys `1`–`9` pick a row while the menu is open; the active model shows a check instead of its number.
+- `More models ›` opens a submenu with the pinned versions and a manual refresh.
 
 Model ids are parsed generically (`claude-opus-4-8` → family `opus`, version `[4, 8]`;
 legacy `claude-3-5-sonnet-20241022` and Bedrock/Vertex qualifiers are handled too),
@@ -286,6 +303,17 @@ pinned ids are redirected to their family alias.
 Custom models via env vars: `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_*_MODEL`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`.
 A custom `ANTHROPIC_BASE_URL` switches the selector to env-declared models only;
 otherwise they are appended to the `previous` tier.
+
+### Claude Agent SDK version
+
+Pinned to `@anthropic-ai/claude-agent-sdk` `^0.3.x`.
+
+| Concern | Notes |
+|---------|-------|
+| Thinking | `maxThinkingTokens` is deprecated. `core/models/thinkingOptions.ts` emits `thinking: { type }` and keeps the legacy field so older CLI builds still get a budget. |
+| Message types | The SDK's message union grows each release (new block kinds, new stream events). `core/types/sdk.ts` models only the subset the plugin renders and keeps open unions; the stream is narrowed once at the `ObsidianCodeService` boundary. |
+| Bundling | The SDK imports builtins as `node:fs` etc. `esbuild.config.mjs` externalizes both bare and `node:`-prefixed builtin names. |
+| Not adopted yet | `effort` (reasoning effort levels) — supported levels vary per model, so wiring it to the thinking selector needs a per-model capability check first. |
 
 ## Features
 

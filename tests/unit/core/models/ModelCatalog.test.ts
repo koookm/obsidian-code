@@ -2,6 +2,7 @@ import {
   buildModelCatalog,
   findCatalogEntry,
   formatModelLabel,
+  formatModelShortLabel,
   isClaudeModelId,
   isPlausibleModelId,
   parseModelId,
@@ -60,6 +61,12 @@ describe('formatModelLabel', () => {
     expect(formatModelLabel('claude-fable-5')).toBe('Claude Fable 5');
   });
 
+  it('has a compact form without the vendor prefix for menu rows', () => {
+    expect(formatModelShortLabel('claude-opus-4-8')).toBe('Opus 4.8');
+    expect(formatModelShortLabel('claude-haiku-4-5')).toBe('Haiku 4.5');
+    expect(formatModelShortLabel('claude-2.1')).toBe('claude-2.1');
+  });
+
   it('falls back to the raw id when there is no family', () => {
     expect(formatModelLabel('claude-2.1')).toBe('claude-2.1');
   });
@@ -76,7 +83,17 @@ describe('buildModelCatalog', () => {
     const catalog = buildModelCatalog(FALLBACK);
     const opus = catalog.latest.find((m) => m.value === 'opus');
     expect(opus?.resolvedId).toBe('claude-opus-5');
-    expect(opus?.description).toBe('Claude Opus 5');
+    // The row is named after the version it resolves to, Claude Code style.
+    expect(opus?.label).toBe('Opus 5');
+    expect(opus?.description).toContain('claude-opus-5');
+  });
+
+  it('renames the alias row when a newer version ships', () => {
+    const catalog = buildModelCatalog([
+      ...FALLBACK,
+      { value: 'claude-opus-6', label: 'Claude Opus 6', description: '' },
+    ]);
+    expect(catalog.latest.find((m) => m.value === 'opus')?.label).toBe('Opus 6');
   });
 
   it('picks up a newly released version with no code change', () => {
@@ -164,12 +181,12 @@ describe('findCatalogEntry', () => {
   const catalog = buildModelCatalog(FALLBACK);
 
   it('finds a known entry', () => {
-    expect(findCatalogEntry(catalog, 'opus').label).toBe('Opus (Latest)');
+    expect(findCatalogEntry(catalog, 'opus').label).toBe('Opus 5');
   });
 
   it('synthesizes an entry for an unknown id instead of guessing another model', () => {
     expect(findCatalogEntry(catalog, 'claude-opus-42').value).toBe('claude-opus-42');
-    expect(findCatalogEntry(catalog, 'claude-opus-42').label).toBe('Claude Opus 42');
+    expect(findCatalogEntry(catalog, 'claude-opus-42').label).toBe('Opus 42');
   });
 });
 
