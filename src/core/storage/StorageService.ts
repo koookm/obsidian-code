@@ -12,13 +12,13 @@
 
 import type { App, Plugin } from 'obsidian';
 
+import type { RawModelEntry } from '../models/ModelCatalog';
 import type {
   ClaudeModel,
   Conversation,
   ObsidianCodeSettings,
   SlashCommand,
 } from '../types';
-import type { RawModelEntry } from '../models/ModelCatalog';
 import { DEFAULT_SETTINGS } from '../types';
 import { McpStorage } from './McpStorage';
 import { SESSIONS_PATH, SessionStorage } from './SessionStorage';

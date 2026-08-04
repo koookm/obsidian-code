@@ -9,12 +9,12 @@ import type { WorkspaceLeaf } from 'obsidian';
 import { ItemView, setIcon } from 'obsidian';
 
 import { SlashCommandManager } from '../../core/commands';
+import { isClaudeModelId } from '../../core/models/ModelCatalog';
 import { CLIBridge } from '../../core/omc/CLIBridge';
 import { OMCDetector } from '../../core/omc/OMCDetector';
 import { OMCHUDProvider } from '../../core/omc/OMCHUDProvider';
 import { OMCMCPImporter } from '../../core/omc/OMCMCPImporter';
 import { OMCSkillsLoader } from '../../core/omc/OMCSkillsLoader';
-import { isClaudeModelId } from '../../core/models/ModelCatalog';
 import type { ClaudeModel, ThinkingBudget } from '../../core/types';
 import { getDefaultThinkingBudget, VIEW_TYPE_OBSIDIAN_CODE } from '../../core/types';
 import type ObsidianCodePlugin from '../../main';
