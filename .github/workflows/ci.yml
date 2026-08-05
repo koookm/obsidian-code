@@ -34,11 +34,13 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test
-        run: npm run test
-
+      # Build before test: the bundle-load test evaluates the built main.js,
+      # which is how a bundling regression gets caught before release.
       - name: Build
         run: npm run build
+
+      - name: Test
+        run: npm run test
 
       - name: Check built artifacts are committed
         run: |

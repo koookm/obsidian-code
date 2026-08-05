@@ -69,6 +69,15 @@ const context = await esbuild.context({
     ...builtins.map((name) => `node:${name}`),
   ],
   format: 'cjs',
+  // The Agent SDK is ESM and calls createRequire(import.meta.url). Bundled to
+  // CJS that shim evaluates to undefined and throws at load time, so point it
+  // at this bundle's own path instead.
+  banner: {
+    js: "const __oc_importMetaUrl = require('url').pathToFileURL(__filename).href;",
+  },
+  define: {
+    'import.meta.url': '__oc_importMetaUrl',
+  },
   target: 'es2018',
   logLevel: 'info',
   sourcemap: prod ? false : 'inline',

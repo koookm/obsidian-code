@@ -1,3 +1,4 @@
+const __oc_importMetaUrl = require('url').pathToFileURL(__filename).href;
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -144,7 +145,6 @@ var import_os7 = require("os");
 var import_path21 = require("path");
 var import_child_process5 = require("child_process");
 var import_fs10 = require("fs");
-var import_meta = {};
 var TV = Object.create;
 var { getPrototypeOf: kV, defineProperty: zy, getOwnPropertyNames: AV } = Object;
 var OV = Object.prototype.hasOwnProperty;
@@ -176,7 +176,7 @@ var ut = (e, t) => {
   for (var r in t) zy(e, r, { get: t[r], enumerable: true, configurable: true, set: DV.bind(t, r) });
 };
 var Q = (e, t) => () => (e && (t = e(e = 0)), t);
-var xe = (0, import_node_module.createRequire)(import_meta.url);
+var xe = (0, import_node_module.createRequire)(__oc_importMetaUrl);
 var NV = Symbol.dispose || /* @__PURE__ */ Symbol.for("Symbol.dispose");
 var MV = Symbol.asyncDispose || /* @__PURE__ */ Symbol.for("Symbol.asyncDispose");
 var it = (e, t, r) => {
@@ -25266,7 +25266,7 @@ function dO(e, t) {
   SF(!!A, hO, T);
   let Uy = d.pathToClaudeCodeExecutable;
   if (!Uy) {
-    let br = (0, import_url2.fileURLToPath)(import_meta.url), Xr = (0, import_module.createRequire)(br), mi = FU((ws) => Xr.resolve(ws));
+    let br = (0, import_url2.fileURLToPath)(__oc_importMetaUrl), Xr = (0, import_module.createRequire)(br), mi = FU((ws) => Xr.resolve(ws));
     if (!mi) throw Error(`Native CLI binary for ${process.platform}-${process.arch} not found. Reinstall @anthropic-ai/claude-agent-sdk without --omit=optional, or set options.pathToClaudeCodeExecutable.`);
     Uy = mi;
   }
