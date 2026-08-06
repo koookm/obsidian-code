@@ -1,18 +1,16 @@
 /**
  * Model type definitions and constants.
  */
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-
 import { formatModelLabel, parseModelId } from '../models/ModelCatalog';
-
-const execFileAsync = promisify(execFile);
 
 /** Model identifier (string to support custom models via environment variables). */
 export type ClaudeModel = string;
 
+/** A selectable model entry in the UI catalog. */
+export type ModelOption = { value: string; label: string; description: string };
+
 /** Parse and format a raw model list from the Anthropic API response. */
-function parseModelList(data: any): { value: string; label: string; description: string }[] | null {
+function parseModelList(data: any): ModelOption[] | null {
   if (!data?.data || !Array.isArray(data.data)) return null;
   const models = (data.data as any[])
     .filter((m) => typeof m.id === 'string' && m.id.startsWith('claude-'))
@@ -28,39 +26,45 @@ function parseModelList(data: any): { value: string; label: string; description:
 }
 
 /**
- * Fetches the list of available Claude models.
- * Tries ANTHROPIC_API_KEY (direct REST) first, then falls back to CLI OAuth
- * (subscription users authenticated via `claude login`).
+ * True when the environment can enumerate models (i.e. an API key is present).
+ *
+ * Subscription (OAuth) auth cannot list models — see fetchAvailableModels — so
+ * the UI uses this to explain *why* a refresh is unavailable instead of telling
+ * a correctly logged-in subscriber that their login failed.
  */
-export async function fetchModelsFromCLI(
-  cliPath: string
-): Promise<{ value: string; label: string; description: string }[] | null> {
+export function hasModelApiKey(): boolean {
+  return Boolean(process.env.ANTHROPIC_API_KEY);
+}
+
+/**
+ * Fetches the list of available Claude models from the Anthropic REST API.
+ *
+ * Requires ANTHROPIC_API_KEY. There is deliberately no CLI fallback: the Claude
+ * Code CLI exposes no model-listing command, so the previous
+ * `claude api get /v1/models` fallback was parsed as a *prompt* ("api get
+ * /v1/models") and silently ran a billable inference query whose plain-text
+ * output could never parse as JSON. Subscription users keep the offline
+ * DEFAULT_CLAUDE_MODELS catalog, which the CLI resolves to concrete versions at
+ * request time anyway.
+ *
+ * Returns null when no key is configured or the request fails.
+ */
+export async function fetchAvailableModels(): Promise<ModelOption[] | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
 
-  // Path 1: API key → direct REST call
-  if (apiKey) {
-    try {
-      const res = await fetch('https://api.anthropic.com/v1/models', {
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-      });
-      if (res.ok) return parseModelList(await res.json());
-    } catch { /* fall through */ }
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/models', {
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+    });
+    if (!res.ok) return null;
+    return parseModelList(await res.json());
+  } catch {
+    return null;
   }
-
-  // Path 2: CLI OAuth (subscription) → proxy via `claude api get /v1/models`
-  if (cliPath) {
-    try {
-      const { stdout } = await execFileAsync(cliPath, ['api', 'get', '/v1/models'], {
-        timeout: 10000,
-      });
-      return parseModelList(JSON.parse(stdout));
-    } catch { /* fall through */ }
-  }
-
-  return null;
 }
 
 /**

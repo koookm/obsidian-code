@@ -11,6 +11,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { getCurrentPlatformKey } from '../../core/types';
+import { hasModelApiKey } from '../../core/types/models';
 import type ObsidianCodePlugin from '../../main';
 import { EnvSnippetManager, McpSettingsManager, SlashCommandSettings } from '../../ui';
 import { expandHomePath } from '../../utils/path';
@@ -357,52 +358,9 @@ export class ObsidianCodeSettingTab extends PluginSettingTab {
           });
       });
 
-    // Display all installed skills (including GitHub-installed ones)
-    const installedSkills = getInstalledSkills(this.app);
-
-    if (installedSkills.length > 0) {
-      const installedSkillsDesc = containerEl.createDiv({ cls: 'oc-skills-installed-desc' });
-      installedSkillsDesc.createEl('p', {
-        text: `Installed Skills (${installedSkills.length}):`,
-        cls: 'setting-item-description',
-      });
-
-      const skillsListEl = containerEl.createDiv({ cls: 'oc-skills-list' });
-
-      for (const skill of installedSkills) {
-        const skillItemEl = skillsListEl.createDiv({ cls: 'oc-skills-item' });
-
-        const skillInfoEl = skillItemEl.createDiv({ cls: 'oc-skills-item-info' });
-
-        const skillNameEl = skillInfoEl.createSpan({ cls: 'oc-skills-item-name' });
-        skillNameEl.setText(skill.name);
-
-        if (skill.isBuiltIn) {
-          const builtInBadge = skillInfoEl.createSpan({ cls: 'oc-skills-builtin-badge' });
-          builtInBadge.setText('Built-in');
-        }
-
-        const skillDescEl = skillInfoEl.createDiv({ cls: 'oc-skills-item-desc' });
-        skillDescEl.setText(skill.description.length > 100
-          ? skill.description.substring(0, 100) + '...'
-          : skill.description);
-
-        // Only show individual remove button for custom (non-built-in) skills
-        if (!skill.isBuiltIn) {
-          const removeBtn = skillItemEl.createEl('button', {
-            text: 'Remove',
-            cls: 'oc-skills-remove-btn',
-          });
-          removeBtn.addEventListener('click', async () => {
-            await removeSkill(this.app, skill.name);
-            this.display(); // Refresh
-          });
-        }
-      }
-    } else {
-      const emptyEl = containerEl.createDiv({ cls: 'oc-skills-empty' });
-      emptyEl.setText('No skills installed. Install Obsidian Skills above or add custom skills from GitHub.');
-    }
+    // The installed-skills list itself renders at the very bottom of the pane
+    // (see renderInstalledSkills) — it grows long enough to bury every section
+    // that would otherwise follow it.
 
     // Hotkeys section
     new Setting(containerEl).setName('Hotkeys').setHeading();
@@ -656,10 +614,21 @@ export class ObsidianCodeSettingTab extends PluginSettingTab {
         (fetchedAt ? ` (${new Date(fetchedAt).toLocaleString()} 기준)` : '')
       : `기본 모델 목록 사용 중 (${availableModels.length}개)`;
 
-    new Setting(containerEl)
+    // Model-list enumeration is an API-key-only capability: the Anthropic
+    // /v1/models endpoint takes an API key, and the CLI has no equivalent
+    // command. Say so plainly rather than implying a subscription login is
+    // broken when it is working fine for chat.
+    const canFetchModels = hasModelApiKey();
+    const refreshDesc = canFetchModels
+      ? `현재: ${modelSource}. 모델 목록은 플러그인 시작 시 자동으로 갱신됩니다(6시간 캐시). 새 모델이 출시되면 별도 업데이트 없이 반영됩니다.`
+      : `현재: ${modelSource}. 모델 목록 조회는 ANTHROPIC_API_KEY가 있을 때만 가능합니다 — Anthropic의 모델 목록 API가 API 키만 받고, Claude Code CLI에는 대응하는 명령이 없습니다. Claude Max 구독 인증은 채팅에 정상 사용되며, 모델 선택은 아래 기본 목록으로 동작합니다("(Latest)" 항목은 CLI가 실행 시점에 최신 버전으로 해석).`;
+
+    const refreshSetting = new Setting(containerEl)
       .setName('사용 가능한 모델 새로고침')
-      .setDesc(`현재: ${modelSource}. 모델 목록은 플러그인 시작 시 자동으로 갱신되며(6시간 캐시), 새 모델이 출시되면 별도 업데이트 없이 반영됩니다. (Claude Code CLI 인증(구독) 또는 ANTHROPIC_API_KEY 필요)`)
-      .addButton((button) => {
+      .setDesc(refreshDesc);
+
+    if (canFetchModels) {
+      refreshSetting.addButton((button) => {
         button
           .setButtonText('모델 목록 가져오기')
           .onClick(async () => {
@@ -670,11 +639,12 @@ export class ObsidianCodeSettingTab extends PluginSettingTab {
               const count = this.plugin.runtimeAvailableModels?.length ?? 0;
               new Notice(`✓ ${count}개 모델을 성공적으로 불러왔습니다.`);
             } else {
-              new Notice('❌ 모델 목록 불러오기 실패. Claude Code CLI로 로그인하거나 환경 변수에 ANTHROPIC_API_KEY를 설정하세요.');
+              new Notice('❌ 모델 목록 불러오기 실패. ANTHROPIC_API_KEY가 유효한지, 네트워크 연결이 가능한지 확인하세요.');
             }
             this.display();
           });
       });
+    }
 
     // Current model dropdown
     new Setting(containerEl)
@@ -774,5 +744,65 @@ export class ObsidianCodeSettingTab extends PluginSettingTab {
       }
     });
 
+    // Installed skills list — kept last because it can run to dozens of rows.
+    this.renderInstalledSkills(containerEl);
+  }
+
+  /**
+   * Render the list of installed skills (bundled + GitHub-installed).
+   *
+   * Lives at the bottom of the settings pane: the list is unbounded in length,
+   * so rendering it inline with the Obsidian Skills controls pushed Hotkeys,
+   * MCP, Safety, and Advanced off the screen.
+   */
+  private renderInstalledSkills(containerEl: HTMLElement): void {
+    const installedSkills = getInstalledSkills(this.app);
+
+    new Setting(containerEl).setName('Installed Skills').setHeading();
+
+    if (installedSkills.length === 0) {
+      const emptyEl = containerEl.createDiv({ cls: 'oc-skills-empty' });
+      emptyEl.setText('No skills installed. Install Obsidian Skills above or add custom skills from GitHub.');
+      return;
+    }
+
+    const installedSkillsDesc = containerEl.createDiv({ cls: 'oc-skills-installed-desc' });
+    installedSkillsDesc.createEl('p', {
+      text: `Installed Skills (${installedSkills.length}):`,
+      cls: 'setting-item-description',
+    });
+
+    const skillsListEl = containerEl.createDiv({ cls: 'oc-skills-list' });
+
+    for (const skill of installedSkills) {
+      const skillItemEl = skillsListEl.createDiv({ cls: 'oc-skills-item' });
+
+      const skillInfoEl = skillItemEl.createDiv({ cls: 'oc-skills-item-info' });
+
+      const skillNameEl = skillInfoEl.createSpan({ cls: 'oc-skills-item-name' });
+      skillNameEl.setText(skill.name);
+
+      if (skill.isBuiltIn) {
+        const builtInBadge = skillInfoEl.createSpan({ cls: 'oc-skills-builtin-badge' });
+        builtInBadge.setText('Built-in');
+      }
+
+      const skillDescEl = skillInfoEl.createDiv({ cls: 'oc-skills-item-desc' });
+      skillDescEl.setText(skill.description.length > 100
+        ? skill.description.substring(0, 100) + '...'
+        : skill.description);
+
+      // Only show individual remove button for custom (non-built-in) skills
+      if (!skill.isBuiltIn) {
+        const removeBtn = skillItemEl.createEl('button', {
+          text: 'Remove',
+          cls: 'oc-skills-remove-btn',
+        });
+        removeBtn.addEventListener('click', async () => {
+          await removeSkill(this.app, skill.name);
+          this.display(); // Refresh
+        });
+      }
+    }
   }
 }

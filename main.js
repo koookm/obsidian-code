@@ -26636,10 +26636,6 @@ function getPathFromToolInput(toolName, toolInput) {
 // src/core/types/chat.ts
 var VIEW_TYPE_OBSIDIAN_CODE = "obsidian-code-view";
 
-// src/core/types/models.ts
-var import_child_process6 = require("child_process");
-var import_util4 = require("util");
-
 // src/core/models/ModelCatalog.ts
 var CLI_ALIAS_FAMILIES = /* @__PURE__ */ new Set([
   "fable",
@@ -26843,7 +26839,6 @@ function findCatalogEntry(catalog, value) {
 }
 
 // src/core/types/models.ts
-var execFileAsync = (0, import_util4.promisify)(import_child_process6.execFile);
 function parseModelList(data) {
   if (!(data == null ? void 0 : data.data) || !Array.isArray(data.data)) return null;
   const models = data.data.filter((m) => typeof m.id === "string" && m.id.startsWith("claude-")).sort((a, b) => b.id.localeCompare(a.id)).map((m) => ({
@@ -26853,30 +26848,24 @@ function parseModelList(data) {
   }));
   return models.length > 0 ? models : null;
 }
-async function fetchModelsFromCLI(cliPath) {
+function hasModelApiKey() {
+  return Boolean(process.env.ANTHROPIC_API_KEY);
+}
+async function fetchAvailableModels() {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (apiKey) {
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/models", {
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01"
-        }
-      });
-      if (res.ok) return parseModelList(await res.json());
-    } catch (e) {
-    }
+  if (!apiKey) return null;
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/models", {
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01"
+      }
+    });
+    if (!res.ok) return null;
+    return parseModelList(await res.json());
+  } catch (e) {
+    return null;
   }
-  if (cliPath) {
-    try {
-      const { stdout } = await execFileAsync(cliPath, ["api", "get", "/v1/models"], {
-        timeout: 1e4
-      });
-      return parseModelList(JSON.parse(stdout));
-    } catch (e) {
-    }
-  }
-  return null;
 }
 var DEFAULT_CLAUDE_MODELS = [
   { value: "claude-fable-5", label: "Claude Fable 5", description: "\uD50C\uB798\uADF8\uC2ED \u2014 \uAC00\uC7A5 \uAC15\uB825\uD55C \uBAA8\uB378" },
@@ -27126,7 +27115,7 @@ function createVaultRestrictionHook(context) {
 }
 
 // src/core/hooks/commandHookAdapter.ts
-var import_child_process7 = require("child_process");
+var import_child_process6 = require("child_process");
 var import_obsidian = require("obsidian");
 
 // src/core/types/hooks.ts
@@ -27162,7 +27151,7 @@ function execCommand(spec, event, hookInput, vaultPath) {
   return new Promise((resolve7) => {
     var _a6, _b5, _c3, _d2, _e3;
     const timeout = Math.min((_a6 = spec.timeout) != null ? _a6 : DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
-    const child = (0, import_child_process7.spawn)(spec.command, {
+    const child = (0, import_child_process6.spawn)(spec.command, {
       shell: true,
       timeout,
       cwd: vaultPath,
@@ -29817,7 +29806,7 @@ var StorageService = class {
 var import_obsidian33 = require("obsidian");
 
 // src/core/commands/SlashCommandManager.ts
-var import_child_process8 = require("child_process");
+var import_child_process7 = require("child_process");
 var import_obsidian3 = require("obsidian");
 var SlashCommandManager = class {
   constructor(app, vaultPath, options = {}) {
@@ -30010,7 +29999,7 @@ var SlashCommandManager = class {
 };
 function defaultBashRunner(command, cwd) {
   return new Promise((resolve7, reject) => {
-    (0, import_child_process8.exec)(
+    (0, import_child_process7.exec)(
       command,
       {
         cwd,
@@ -30031,7 +30020,7 @@ function defaultBashRunner(command, cwd) {
 }
 
 // src/core/omc/CLIBridge.ts
-var import_child_process9 = require("child_process");
+var import_child_process8 = require("child_process");
 var import_obsidian4 = require("obsidian");
 var CLIBridge = class {
   constructor() {
@@ -30050,7 +30039,7 @@ var CLIBridge = class {
       onError("A bridge process is already running");
       return false;
     }
-    const child = (0, import_child_process9.spawn)(command, { shell: true, cwd: vaultPath });
+    const child = (0, import_child_process8.spawn)(command, { shell: true, cwd: vaultPath });
     this.active = child;
     (_a6 = child.stdout) == null ? void 0 : _a6.on("data", (d) => onChunk(d.toString()));
     (_b5 = child.stderr) == null ? void 0 : _b5.on("data", (d) => onChunk(d.toString()));
@@ -30079,7 +30068,7 @@ var CLIBridge = class {
 };
 
 // src/core/omc/OMCDetector.ts
-var import_child_process10 = require("child_process");
+var import_child_process9 = require("child_process");
 var fs7 = __toESM(require("fs"));
 var import_obsidian5 = require("obsidian");
 var os4 = __toESM(require("os"));
@@ -30116,7 +30105,7 @@ var OMCDetector = class _OMCDetector {
   findCli() {
     return new Promise((resolve7) => {
       try {
-        const child = (0, import_child_process10.spawn)("omc", ["--version"], { shell: true, timeout: 3e3 });
+        const child = (0, import_child_process9.spawn)("omc", ["--version"], { shell: true, timeout: 3e3 });
         child.on("close", (code) => resolve7(code === 0 ? "omc" : null));
         child.on("error", () => resolve7(null));
       } catch (e) {
@@ -37892,7 +37881,7 @@ var EnvSnippetManager = class {
 var import_obsidian27 = require("obsidian");
 
 // src/features/mcp/McpTester.ts
-var import_child_process11 = require("child_process");
+var import_child_process10 = require("child_process");
 var http = __toESM(require("http"));
 var https = __toESM(require("https"));
 async function testMcpServer(server) {
@@ -37950,7 +37939,7 @@ async function testStdioServer(server) {
         });
         return;
       }
-      child = (0, import_child_process11.spawn)(cmd, args, {
+      child = (0, import_child_process10.spawn)(cmd, args, {
         env: { ...process.env, ...config.env, PATH: getEnhancedPath((_a6 = config.env) == null ? void 0 : _a6.PATH) },
         stdio: ["pipe", "pipe", "pipe"]
       });
@@ -44348,40 +44337,6 @@ var ObsidianCodeSettingTab = class extends import_obsidian35.PluginSettingTab {
         }
       });
     });
-    const installedSkills = getInstalledSkills(this.app);
-    if (installedSkills.length > 0) {
-      const installedSkillsDesc = containerEl.createDiv({ cls: "oc-skills-installed-desc" });
-      installedSkillsDesc.createEl("p", {
-        text: `Installed Skills (${installedSkills.length}):`,
-        cls: "setting-item-description"
-      });
-      const skillsListEl = containerEl.createDiv({ cls: "oc-skills-list" });
-      for (const skill of installedSkills) {
-        const skillItemEl = skillsListEl.createDiv({ cls: "oc-skills-item" });
-        const skillInfoEl = skillItemEl.createDiv({ cls: "oc-skills-item-info" });
-        const skillNameEl = skillInfoEl.createSpan({ cls: "oc-skills-item-name" });
-        skillNameEl.setText(skill.name);
-        if (skill.isBuiltIn) {
-          const builtInBadge = skillInfoEl.createSpan({ cls: "oc-skills-builtin-badge" });
-          builtInBadge.setText("Built-in");
-        }
-        const skillDescEl = skillInfoEl.createDiv({ cls: "oc-skills-item-desc" });
-        skillDescEl.setText(skill.description.length > 100 ? skill.description.substring(0, 100) + "..." : skill.description);
-        if (!skill.isBuiltIn) {
-          const removeBtn = skillItemEl.createEl("button", {
-            text: "Remove",
-            cls: "oc-skills-remove-btn"
-          });
-          removeBtn.addEventListener("click", async () => {
-            await removeSkill(this.app, skill.name);
-            this.display();
-          });
-        }
-      }
-    } else {
-      const emptyEl = containerEl.createDiv({ cls: "oc-skills-empty" });
-      emptyEl.setText("No skills installed. Install Obsidian Skills above or add custom skills from GitHub.");
-    }
     new import_obsidian35.Setting(containerEl).setName("Hotkeys").setHeading();
     const inlineEditCommandId = "cc-obsidian:inline-edit";
     const inlineEditHotkey = getHotkeyForCommand(this.app, inlineEditCommandId);
@@ -44514,21 +44469,26 @@ var ObsidianCodeSettingTab = class extends import_obsidian35.PluginSettingTab {
     const availableModels = this.plugin.getAvailableModels();
     const fetchedAt = this.plugin.modelsFetchedAt;
     const modelSource = this.plugin.runtimeAvailableModels ? `Anthropic API\uC5D0\uC11C ${availableModels.length}\uAC1C \uBAA8\uB378 \uB85C\uB4DC\uB428` + (fetchedAt ? ` (${new Date(fetchedAt).toLocaleString()} \uAE30\uC900)` : "") : `\uAE30\uBCF8 \uBAA8\uB378 \uBAA9\uB85D \uC0AC\uC6A9 \uC911 (${availableModels.length}\uAC1C)`;
-    new import_obsidian35.Setting(containerEl).setName("\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uBAA8\uB378 \uC0C8\uB85C\uACE0\uCE68").setDesc(`\uD604\uC7AC: ${modelSource}. \uBAA8\uB378 \uBAA9\uB85D\uC740 \uD50C\uB7EC\uADF8\uC778 \uC2DC\uC791 \uC2DC \uC790\uB3D9\uC73C\uB85C \uAC31\uC2E0\uB418\uBA70(6\uC2DC\uAC04 \uCE90\uC2DC), \uC0C8 \uBAA8\uB378\uC774 \uCD9C\uC2DC\uB418\uBA74 \uBCC4\uB3C4 \uC5C5\uB370\uC774\uD2B8 \uC5C6\uC774 \uBC18\uC601\uB429\uB2C8\uB2E4. (Claude Code CLI \uC778\uC99D(\uAD6C\uB3C5) \uB610\uB294 ANTHROPIC_API_KEY \uD544\uC694)`).addButton((button) => {
-      button.setButtonText("\uBAA8\uB378 \uBAA9\uB85D \uAC00\uC838\uC624\uAE30").onClick(async () => {
-        var _a6, _b5;
-        button.setButtonText("\uBD88\uB7EC\uC624\uB294 \uC911...");
-        button.setDisabled(true);
-        const success = await this.plugin.refreshAvailableModels();
-        if (success) {
-          const count = (_b5 = (_a6 = this.plugin.runtimeAvailableModels) == null ? void 0 : _a6.length) != null ? _b5 : 0;
-          new import_obsidian35.Notice(`\u2713 ${count}\uAC1C \uBAA8\uB378\uC744 \uC131\uACF5\uC801\uC73C\uB85C \uBD88\uB7EC\uC654\uC2B5\uB2C8\uB2E4.`);
-        } else {
-          new import_obsidian35.Notice("\u274C \uBAA8\uB378 \uBAA9\uB85D \uBD88\uB7EC\uC624\uAE30 \uC2E4\uD328. Claude Code CLI\uB85C \uB85C\uADF8\uC778\uD558\uAC70\uB098 \uD658\uACBD \uBCC0\uC218\uC5D0 ANTHROPIC_API_KEY\uB97C \uC124\uC815\uD558\uC138\uC694.");
-        }
-        this.display();
+    const canFetchModels = hasModelApiKey();
+    const refreshDesc = canFetchModels ? `\uD604\uC7AC: ${modelSource}. \uBAA8\uB378 \uBAA9\uB85D\uC740 \uD50C\uB7EC\uADF8\uC778 \uC2DC\uC791 \uC2DC \uC790\uB3D9\uC73C\uB85C \uAC31\uC2E0\uB429\uB2C8\uB2E4(6\uC2DC\uAC04 \uCE90\uC2DC). \uC0C8 \uBAA8\uB378\uC774 \uCD9C\uC2DC\uB418\uBA74 \uBCC4\uB3C4 \uC5C5\uB370\uC774\uD2B8 \uC5C6\uC774 \uBC18\uC601\uB429\uB2C8\uB2E4.` : `\uD604\uC7AC: ${modelSource}. \uBAA8\uB378 \uBAA9\uB85D \uC870\uD68C\uB294 ANTHROPIC_API_KEY\uAC00 \uC788\uC744 \uB54C\uB9CC \uAC00\uB2A5\uD569\uB2C8\uB2E4 \u2014 Anthropic\uC758 \uBAA8\uB378 \uBAA9\uB85D API\uAC00 API \uD0A4\uB9CC \uBC1B\uACE0, Claude Code CLI\uC5D0\uB294 \uB300\uC751\uD558\uB294 \uBA85\uB839\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. Claude Max \uAD6C\uB3C5 \uC778\uC99D\uC740 \uCC44\uD305\uC5D0 \uC815\uC0C1 \uC0AC\uC6A9\uB418\uBA70, \uBAA8\uB378 \uC120\uD0DD\uC740 \uC544\uB798 \uAE30\uBCF8 \uBAA9\uB85D\uC73C\uB85C \uB3D9\uC791\uD569\uB2C8\uB2E4("(Latest)" \uD56D\uBAA9\uC740 CLI\uAC00 \uC2E4\uD589 \uC2DC\uC810\uC5D0 \uCD5C\uC2E0 \uBC84\uC804\uC73C\uB85C \uD574\uC11D).`;
+    const refreshSetting = new import_obsidian35.Setting(containerEl).setName("\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uBAA8\uB378 \uC0C8\uB85C\uACE0\uCE68").setDesc(refreshDesc);
+    if (canFetchModels) {
+      refreshSetting.addButton((button) => {
+        button.setButtonText("\uBAA8\uB378 \uBAA9\uB85D \uAC00\uC838\uC624\uAE30").onClick(async () => {
+          var _a6, _b5;
+          button.setButtonText("\uBD88\uB7EC\uC624\uB294 \uC911...");
+          button.setDisabled(true);
+          const success = await this.plugin.refreshAvailableModels();
+          if (success) {
+            const count = (_b5 = (_a6 = this.plugin.runtimeAvailableModels) == null ? void 0 : _a6.length) != null ? _b5 : 0;
+            new import_obsidian35.Notice(`\u2713 ${count}\uAC1C \uBAA8\uB378\uC744 \uC131\uACF5\uC801\uC73C\uB85C \uBD88\uB7EC\uC654\uC2B5\uB2C8\uB2E4.`);
+          } else {
+            new import_obsidian35.Notice("\u274C \uBAA8\uB378 \uBAA9\uB85D \uBD88\uB7EC\uC624\uAE30 \uC2E4\uD328. ANTHROPIC_API_KEY\uAC00 \uC720\uD6A8\uD55C\uC9C0, \uB124\uD2B8\uC6CC\uD06C \uC5F0\uACB0\uC774 \uAC00\uB2A5\uD55C\uC9C0 \uD655\uC778\uD558\uC138\uC694.");
+          }
+          this.display();
+        });
       });
-    });
+    }
     new import_obsidian35.Setting(containerEl).setName("\uAE30\uBCF8 \uBAA8\uB378").setDesc('\uCC44\uD305\uC5D0\uC11C \uC0AC\uC6A9\uD560 \uAE30\uBCF8 Claude \uBAA8\uB378. "(Latest)" \uD56D\uBAA9\uC740 CLI\uAC00 \uC2E4\uD589 \uC2DC\uC810\uC5D0 \uCD5C\uC2E0 \uBC84\uC804\uC73C\uB85C \uD574\uC11D\uD569\uB2C8\uB2E4.').addDropdown((dropdown) => {
       const catalog = this.plugin.getModelCatalog();
       for (const model of catalog.latest) {
@@ -44596,6 +44556,51 @@ var ObsidianCodeSettingTab = class extends import_obsidian35.PluginSettingTab {
         text.inputEl.style.borderColor = "var(--text-error)";
       }
     });
+    this.renderInstalledSkills(containerEl);
+  }
+  /**
+   * Render the list of installed skills (bundled + GitHub-installed).
+   *
+   * Lives at the bottom of the settings pane: the list is unbounded in length,
+   * so rendering it inline with the Obsidian Skills controls pushed Hotkeys,
+   * MCP, Safety, and Advanced off the screen.
+   */
+  renderInstalledSkills(containerEl) {
+    const installedSkills = getInstalledSkills(this.app);
+    new import_obsidian35.Setting(containerEl).setName("Installed Skills").setHeading();
+    if (installedSkills.length === 0) {
+      const emptyEl = containerEl.createDiv({ cls: "oc-skills-empty" });
+      emptyEl.setText("No skills installed. Install Obsidian Skills above or add custom skills from GitHub.");
+      return;
+    }
+    const installedSkillsDesc = containerEl.createDiv({ cls: "oc-skills-installed-desc" });
+    installedSkillsDesc.createEl("p", {
+      text: `Installed Skills (${installedSkills.length}):`,
+      cls: "setting-item-description"
+    });
+    const skillsListEl = containerEl.createDiv({ cls: "oc-skills-list" });
+    for (const skill of installedSkills) {
+      const skillItemEl = skillsListEl.createDiv({ cls: "oc-skills-item" });
+      const skillInfoEl = skillItemEl.createDiv({ cls: "oc-skills-item-info" });
+      const skillNameEl = skillInfoEl.createSpan({ cls: "oc-skills-item-name" });
+      skillNameEl.setText(skill.name);
+      if (skill.isBuiltIn) {
+        const builtInBadge = skillInfoEl.createSpan({ cls: "oc-skills-builtin-badge" });
+        builtInBadge.setText("Built-in");
+      }
+      const skillDescEl = skillInfoEl.createDiv({ cls: "oc-skills-item-desc" });
+      skillDescEl.setText(skill.description.length > 100 ? skill.description.substring(0, 100) + "..." : skill.description);
+      if (!skill.isBuiltIn) {
+        const removeBtn = skillItemEl.createEl("button", {
+          text: "Remove",
+          cls: "oc-skills-remove-btn"
+        });
+        removeBtn.addEventListener("click", async () => {
+          await removeSkill(this.app, skill.name);
+          this.display();
+        });
+      }
+    }
   }
 };
 
@@ -44714,9 +44719,7 @@ var ObsidianCodePlugin = class extends import_obsidian36.Plugin {
   async refreshAvailableModels() {
     if (this.modelRefreshPromise) return this.modelRefreshPromise;
     this.modelRefreshPromise = (async () => {
-      var _a6;
-      const cliPath = (_a6 = this.getResolvedClaudeCliPath()) != null ? _a6 : "";
-      const models = await fetchModelsFromCLI(cliPath);
+      const models = await fetchAvailableModels();
       if (!models || models.length === 0) return false;
       this.runtimeAvailableModels = models;
       this.modelsFetchedAt = Date.now();

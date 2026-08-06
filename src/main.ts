@@ -24,7 +24,7 @@ import {
   DEFAULT_SETTINGS,
   VIEW_TYPE_OBSIDIAN_CODE,
 } from './core/types';
-import { fetchModelsFromCLI } from './core/types/models';
+import { fetchAvailableModels } from './core/types/models';
 import { ObsidianCodeView } from './features/chat/ObsidianCodeView';
 import { ConversationSummaryService } from './features/chat/services/ConversationSummaryService';
 import { McpService } from './features/mcp/McpService';
@@ -69,8 +69,7 @@ export default class ObsidianCodePlugin extends Plugin {
     if (this.modelRefreshPromise) return this.modelRefreshPromise;
 
     this.modelRefreshPromise = (async () => {
-      const cliPath = this.getResolvedClaudeCliPath() ?? '';
-      const models = await fetchModelsFromCLI(cliPath);
+      const models = await fetchAvailableModels();
       if (!models || models.length === 0) return false;
 
       this.runtimeAvailableModels = models;
