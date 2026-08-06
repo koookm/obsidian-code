@@ -26077,6 +26077,20 @@ function getEnhancedPath(additionalPaths, cliPath) {
   });
   return unique.join(PATH_SEPARATOR);
 }
+var OAUTH_OVERRIDE_VARS = /* @__PURE__ */ new Set(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]);
+function buildSubprocessEnv(envText, cliPath) {
+  const customEnv = parseEnvironmentVariables(envText);
+  const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
+  const filteredProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (OAUTH_OVERRIDE_VARS.has(key) && !(key in customEnv)) continue;
+    if (value !== void 0) filteredProcessEnv[key] = value;
+  }
+  return {
+    env: { ...filteredProcessEnv, ...customEnv, PATH: enhancedPath },
+    customEnv
+  };
+}
 function parseEnvironmentVariables(input) {
   const result = {};
   for (const line of input.split(/\r?\n/)) {
@@ -26636,10 +26650,6 @@ function getPathFromToolInput(toolName, toolInput) {
 // src/core/types/chat.ts
 var VIEW_TYPE_OBSIDIAN_CODE = "obsidian-code-view";
 
-// src/core/types/models.ts
-var import_child_process6 = require("child_process");
-var import_util4 = require("util");
-
 // src/core/models/ModelCatalog.ts
 var CLI_ALIAS_FAMILIES = /* @__PURE__ */ new Set([
   "fable",
@@ -26843,7 +26853,6 @@ function findCatalogEntry(catalog, value) {
 }
 
 // src/core/types/models.ts
-var execFileAsync = (0, import_util4.promisify)(import_child_process6.execFile);
 function parseModelList(data) {
   if (!(data == null ? void 0 : data.data) || !Array.isArray(data.data)) return null;
   const models = data.data.filter((m) => typeof m.id === "string" && m.id.startsWith("claude-")).sort((a, b) => b.id.localeCompare(a.id)).map((m) => ({
@@ -26853,8 +26862,53 @@ function parseModelList(data) {
   }));
   return models.length > 0 ? models : null;
 }
-async function fetchModelsFromCLI(cliPath) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+async function fetchModelsViaSDK(cliPath, cwd, env, timeoutMs = 15e3) {
+  if (!cliPath) return null;
+  async function* noPrompt() {
+    await new Promise(() => {
+    });
+  }
+  const options = { cwd, pathToClaudeCodeExecutable: cliPath, env };
+  const q = HAt({ prompt: noPrompt(), options });
+  let timer;
+  try {
+    const models = await Promise.race([
+      q.supportedModels(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
+      })
+    ]);
+    const seen = /* @__PURE__ */ new Set();
+    const entries = [];
+    for (const m of models) {
+      if (m.value === "default") continue;
+      const id = m.resolvedModel;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      entries.push({
+        value: id,
+        label: formatModelLabel(id),
+        description: m.description || id
+      });
+    }
+    return entries.length > 0 ? entries : null;
+  } catch (e) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    try {
+      await q.interrupt();
+    } catch (e) {
+    }
+    try {
+      await q.return(void 0);
+    } catch (e) {
+    }
+  }
+}
+async function fetchModelsFromCLI(cliPath, envText = "", cwd = process.cwd()) {
+  const { env, customEnv } = buildSubprocessEnv(envText, cliPath);
+  const apiKey = customEnv.ANTHROPIC_API_KEY;
   if (apiKey) {
     try {
       const res = await fetch("https://api.anthropic.com/v1/models", {
@@ -26863,20 +26917,14 @@ async function fetchModelsFromCLI(cliPath) {
           "anthropic-version": "2023-06-01"
         }
       });
-      if (res.ok) return parseModelList(await res.json());
+      if (res.ok) {
+        const parsed = parseModelList(await res.json());
+        if (parsed) return parsed;
+      }
     } catch (e) {
     }
   }
-  if (cliPath) {
-    try {
-      const { stdout } = await execFileAsync(cliPath, ["api", "get", "/v1/models"], {
-        timeout: 1e4
-      });
-      return parseModelList(JSON.parse(stdout));
-    } catch (e) {
-    }
-  }
-  return null;
+  return fetchModelsViaSDK(cliPath, cwd, env);
 }
 var DEFAULT_CLAUDE_MODELS = [
   { value: "claude-fable-5", label: "Claude Fable 5", description: "\uD50C\uB798\uADF8\uC2ED \u2014 \uAC00\uC7A5 \uAC15\uB825\uD55C \uBAA8\uB378" },
@@ -27126,7 +27174,7 @@ function createVaultRestrictionHook(context) {
 }
 
 // src/core/hooks/commandHookAdapter.ts
-var import_child_process7 = require("child_process");
+var import_child_process6 = require("child_process");
 var import_obsidian = require("obsidian");
 
 // src/core/types/hooks.ts
@@ -27162,7 +27210,7 @@ function execCommand(spec, event, hookInput, vaultPath) {
   return new Promise((resolve7) => {
     var _a6, _b5, _c3, _d2, _e3;
     const timeout = Math.min((_a6 = spec.timeout) != null ? _a6 : DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
-    const child = (0, import_child_process7.spawn)(spec.command, {
+    const child = (0, import_child_process6.spawn)(spec.command, {
       shell: true,
       timeout,
       cwd: vaultPath,
@@ -28219,18 +28267,7 @@ User: ${prompt}` : historyContext : prompt;
     const permissionMode = this.plugin.settings.permissionMode;
     this.sessionManager.setPendingModel(selectedModel);
     this.vaultPath = cwd;
-    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
-    const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
-    const OAUTH_OVERRIDE_VARS = /* @__PURE__ */ new Set(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]);
-    const baseEnv = {};
-    for (const [key, value] of Object.entries(process.env)) {
-      if (OAUTH_OVERRIDE_VARS.has(key) && !(key in customEnv)) {
-        continue;
-      }
-      if (value !== void 0) {
-        baseEnv[key] = value;
-      }
-    }
+    const { env: subprocessEnv } = buildSubprocessEnv(this.plugin.getActiveEnvironmentVariables(), cliPath);
     const queryPrompt = this.buildPromptWithImages(prompt, images);
     const hasEditorContext = prompt.includes("<editor_selection");
     const systemPrompt = buildSystemPrompt({
@@ -28254,13 +28291,7 @@ User: ${prompt}` : historyContext : prompt;
       // that bypass ObsidianCode's permission system. Skills from ~/.claude/skills/
       // are still discovered regardless (not in settings.json).
       settingSources: this.plugin.settings.loadUserClaudeSettings ? ["user", "project"] : ["project"],
-      env: {
-        ...baseEnv,
-        // Filtered env: API key vars removed unless user explicitly set them
-        ...customEnv,
-        // User plugin settings take priority
-        PATH: enhancedPath
-      }
+      env: subprocessEnv
     };
     const mcpMentions = (queryOptions == null ? void 0 : queryOptions.mcpMentions) || /* @__PURE__ */ new Set();
     const uiEnabledServers = (queryOptions == null ? void 0 : queryOptions.enabledMcpServers) || /* @__PURE__ */ new Set();
@@ -29817,7 +29848,7 @@ var StorageService = class {
 var import_obsidian33 = require("obsidian");
 
 // src/core/commands/SlashCommandManager.ts
-var import_child_process8 = require("child_process");
+var import_child_process7 = require("child_process");
 var import_obsidian3 = require("obsidian");
 var SlashCommandManager = class {
   constructor(app, vaultPath, options = {}) {
@@ -30010,7 +30041,7 @@ var SlashCommandManager = class {
 };
 function defaultBashRunner(command, cwd) {
   return new Promise((resolve7, reject) => {
-    (0, import_child_process8.exec)(
+    (0, import_child_process7.exec)(
       command,
       {
         cwd,
@@ -30031,7 +30062,7 @@ function defaultBashRunner(command, cwd) {
 }
 
 // src/core/omc/CLIBridge.ts
-var import_child_process9 = require("child_process");
+var import_child_process8 = require("child_process");
 var import_obsidian4 = require("obsidian");
 var CLIBridge = class {
   constructor() {
@@ -30050,7 +30081,7 @@ var CLIBridge = class {
       onError("A bridge process is already running");
       return false;
     }
-    const child = (0, import_child_process9.spawn)(command, { shell: true, cwd: vaultPath });
+    const child = (0, import_child_process8.spawn)(command, { shell: true, cwd: vaultPath });
     this.active = child;
     (_a6 = child.stdout) == null ? void 0 : _a6.on("data", (d) => onChunk(d.toString()));
     (_b5 = child.stderr) == null ? void 0 : _b5.on("data", (d) => onChunk(d.toString()));
@@ -30079,7 +30110,7 @@ var CLIBridge = class {
 };
 
 // src/core/omc/OMCDetector.ts
-var import_child_process10 = require("child_process");
+var import_child_process9 = require("child_process");
 var fs7 = __toESM(require("fs"));
 var import_obsidian5 = require("obsidian");
 var os4 = __toESM(require("os"));
@@ -30116,7 +30147,7 @@ var OMCDetector = class _OMCDetector {
   findCli() {
     return new Promise((resolve7) => {
       try {
-        const child = (0, import_child_process10.spawn)("omc", ["--version"], { shell: true, timeout: 3e3 });
+        const child = (0, import_child_process9.spawn)("omc", ["--version"], { shell: true, timeout: 3e3 });
         child.on("close", (code) => resolve7(code === 0 ? "omc" : null));
         child.on("error", () => resolve7(null));
       } catch (e) {
@@ -37892,7 +37923,7 @@ var EnvSnippetManager = class {
 var import_obsidian27 = require("obsidian");
 
 // src/features/mcp/McpTester.ts
-var import_child_process11 = require("child_process");
+var import_child_process10 = require("child_process");
 var http = __toESM(require("http"));
 var https = __toESM(require("https"));
 async function testMcpServer(server) {
@@ -37950,7 +37981,7 @@ async function testStdioServer(server) {
         });
         return;
       }
-      child = (0, import_child_process11.spawn)(cmd, args, {
+      child = (0, import_child_process10.spawn)(cmd, args, {
         env: { ...process.env, ...config.env, PATH: getEnhancedPath((_a6 = config.env) == null ? void 0 : _a6.PATH) },
         stdio: ["pipe", "pipe", "pipe"]
       });
@@ -44514,7 +44545,7 @@ var ObsidianCodeSettingTab = class extends import_obsidian35.PluginSettingTab {
     const availableModels = this.plugin.getAvailableModels();
     const fetchedAt = this.plugin.modelsFetchedAt;
     const modelSource = this.plugin.runtimeAvailableModels ? `Anthropic API\uC5D0\uC11C ${availableModels.length}\uAC1C \uBAA8\uB378 \uB85C\uB4DC\uB428` + (fetchedAt ? ` (${new Date(fetchedAt).toLocaleString()} \uAE30\uC900)` : "") : `\uAE30\uBCF8 \uBAA8\uB378 \uBAA9\uB85D \uC0AC\uC6A9 \uC911 (${availableModels.length}\uAC1C)`;
-    new import_obsidian35.Setting(containerEl).setName("\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uBAA8\uB378 \uC0C8\uB85C\uACE0\uCE68").setDesc(`\uD604\uC7AC: ${modelSource}. \uBAA8\uB378 \uBAA9\uB85D\uC740 \uD50C\uB7EC\uADF8\uC778 \uC2DC\uC791 \uC2DC \uC790\uB3D9\uC73C\uB85C \uAC31\uC2E0\uB418\uBA70(6\uC2DC\uAC04 \uCE90\uC2DC), \uC0C8 \uBAA8\uB378\uC774 \uCD9C\uC2DC\uB418\uBA74 \uBCC4\uB3C4 \uC5C5\uB370\uC774\uD2B8 \uC5C6\uC774 \uBC18\uC601\uB429\uB2C8\uB2E4. (Claude Code CLI \uC778\uC99D(\uAD6C\uB3C5) \uB610\uB294 ANTHROPIC_API_KEY \uD544\uC694)`).addButton((button) => {
+    new import_obsidian35.Setting(containerEl).setName("\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uBAA8\uB378 \uC0C8\uB85C\uACE0\uCE68").setDesc(`\uD604\uC7AC: ${modelSource}. \uBAA8\uB378 \uBAA9\uB85D\uC740 \uD50C\uB7EC\uADF8\uC778 \uC2DC\uC791 \uC2DC \uC790\uB3D9\uC73C\uB85C \uAC31\uC2E0\uB418\uBA70(6\uC2DC\uAC04 \uCE90\uC2DC), \uC0C8 \uBAA8\uB378\uC774 \uCD9C\uC2DC\uB418\uBA74 \uBCC4\uB3C4 \uC5C5\uB370\uC774\uD2B8 \uC5C6\uC774 \uBC18\uC601\uB429\uB2C8\uB2E4. Claude Max \uAD6C\uB3C5\uC73C\uB85C \uB85C\uADF8\uC778\uB418\uC5B4 \uC788\uC73C\uBA74 \uBCC4\uB3C4 \uC124\uC815 \uC5C6\uC774 \uB3D9\uC791\uD569\uB2C8\uB2E4.`).addButton((button) => {
       button.setButtonText("\uBAA8\uB378 \uBAA9\uB85D \uAC00\uC838\uC624\uAE30").onClick(async () => {
         var _a6, _b5;
         button.setButtonText("\uBD88\uB7EC\uC624\uB294 \uC911...");
@@ -44524,7 +44555,7 @@ var ObsidianCodeSettingTab = class extends import_obsidian35.PluginSettingTab {
           const count = (_b5 = (_a6 = this.plugin.runtimeAvailableModels) == null ? void 0 : _a6.length) != null ? _b5 : 0;
           new import_obsidian35.Notice(`\u2713 ${count}\uAC1C \uBAA8\uB378\uC744 \uC131\uACF5\uC801\uC73C\uB85C \uBD88\uB7EC\uC654\uC2B5\uB2C8\uB2E4.`);
         } else {
-          new import_obsidian35.Notice("\u274C \uBAA8\uB378 \uBAA9\uB85D \uBD88\uB7EC\uC624\uAE30 \uC2E4\uD328. Claude Code CLI\uB85C \uB85C\uADF8\uC778\uD558\uAC70\uB098 \uD658\uACBD \uBCC0\uC218\uC5D0 ANTHROPIC_API_KEY\uB97C \uC124\uC815\uD558\uC138\uC694.");
+          new import_obsidian35.Notice("\u274C \uBAA8\uB378 \uBAA9\uB85D\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C claude\uB97C \uC2E4\uD589\uD574 \uB85C\uADF8\uC778\uB418\uC5B4 \uC788\uB294\uC9C0, CLI \uACBD\uB85C \uC124\uC815\uC774 \uC62C\uBC14\uB978\uC9C0 \uD655\uC778\uD558\uC138\uC694.");
         }
         this.display();
       });
@@ -44714,9 +44745,10 @@ var ObsidianCodePlugin = class extends import_obsidian36.Plugin {
   async refreshAvailableModels() {
     if (this.modelRefreshPromise) return this.modelRefreshPromise;
     this.modelRefreshPromise = (async () => {
-      var _a6;
+      var _a6, _b5;
       const cliPath = (_a6 = this.getResolvedClaudeCliPath()) != null ? _a6 : "";
-      const models = await fetchModelsFromCLI(cliPath);
+      const cwd = (_b5 = getVaultPath(this.app)) != null ? _b5 : void 0;
+      const models = await fetchModelsFromCLI(cliPath, this.getActiveEnvironmentVariables(), cwd);
       if (!models || models.length === 0) return false;
       this.runtimeAvailableModels = models;
       this.modelsFetchedAt = Date.now();

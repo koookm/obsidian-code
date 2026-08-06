@@ -1,12 +1,11 @@
 /**
  * Model type definitions and constants.
  */
-import { execFile } from 'child_process';
-import { promisify } from 'util';
+import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
 
+import { buildSubprocessEnv } from '../../utils/env';
 import { formatModelLabel, parseModelId } from '../models/ModelCatalog';
-
-const execFileAsync = promisify(execFile);
 
 /** Model identifier (string to support custom models via environment variables). */
 export type ClaudeModel = string;
@@ -28,14 +27,82 @@ function parseModelList(data: any): { value: string; label: string; description:
 }
 
 /**
+ * Fetches the model list the same way the CLI itself resolves it, via the
+ * Agent SDK's `supportedModels()` control request — no ANTHROPIC_API_KEY
+ * required. This opens a streaming query (required for control requests),
+ * asks for the model list over the control channel, and tears the subprocess
+ * down again without ever sending a prompt — so it costs nothing and works
+ * for subscription (CLI OAuth) auth exactly like a normal chat turn does.
+ */
+async function fetchModelsViaSDK(
+  cliPath: string,
+  cwd: string,
+  env: Record<string, string>,
+  timeoutMs = 15000
+): Promise<{ value: string; label: string; description: string }[] | null> {
+  if (!cliPath) return null;
+
+  // eslint-disable-next-line require-yield -- streaming input with nothing to send; keeps the control channel open without spending a turn.
+  async function* noPrompt(): AsyncGenerator<never> {
+    await new Promise<never>(() => { /* never resolves; caller races this against a timeout */ });
+  }
+
+  const options: Options = { cwd, pathToClaudeCodeExecutable: cliPath, env };
+  const q = agentQuery({ prompt: noPrompt(), options });
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const models = await Promise.race([
+      q.supportedModels(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timeout')), timeoutMs);
+      }),
+    ]);
+
+    const seen = new Set<string>();
+    const entries: { value: string; label: string; description: string }[] = [];
+    for (const m of models) {
+      // 'default' just points at whatever alias the CLI currently favors —
+      // skip it so it doesn't shadow the real alias row for that model.
+      if (m.value === 'default') continue;
+      const id = m.resolvedModel;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      entries.push({
+        value: id,
+        label: formatModelLabel(id),
+        description: m.description || id,
+      });
+    }
+    return entries.length > 0 ? entries : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    // Never sent a message, so there is nothing to interrupt server-side;
+    // this just releases the local subprocess.
+    try { await q.interrupt(); } catch { /* already gone */ }
+    try { await q.return(undefined); } catch { /* already gone */ }
+  }
+}
+
+/**
  * Fetches the list of available Claude models.
- * Tries ANTHROPIC_API_KEY (direct REST) first, then falls back to CLI OAuth
- * (subscription users authenticated via `claude login`).
+ *
+ * Tries ANTHROPIC_API_KEY (direct REST, when the user configured one) first,
+ * then falls back to the same auth path regular chat queries use — so
+ * subscription (CLI OAuth) users get this working with zero extra setup.
  */
 export async function fetchModelsFromCLI(
-  cliPath: string
+  cliPath: string,
+  envText = '',
+  cwd = process.cwd()
 ): Promise<{ value: string; label: string; description: string }[] | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const { env, customEnv } = buildSubprocessEnv(envText, cliPath);
+  // Only a user-configured key counts here — buildSubprocessEnv already drops a
+  // stray OS-level ANTHROPIC_API_KEY unless the user set it explicitly, and
+  // regular chat ignores it too, so this stays consistent with what chat sees.
+  const apiKey = customEnv.ANTHROPIC_API_KEY;
 
   // Path 1: API key → direct REST call
   if (apiKey) {
@@ -46,21 +113,15 @@ export async function fetchModelsFromCLI(
           'anthropic-version': '2023-06-01',
         },
       });
-      if (res.ok) return parseModelList(await res.json());
+      if (res.ok) {
+        const parsed = parseModelList(await res.json());
+        if (parsed) return parsed;
+      }
     } catch { /* fall through */ }
   }
 
-  // Path 2: CLI OAuth (subscription) → proxy via `claude api get /v1/models`
-  if (cliPath) {
-    try {
-      const { stdout } = await execFileAsync(cliPath, ['api', 'get', '/v1/models'], {
-        timeout: 10000,
-      });
-      return parseModelList(JSON.parse(stdout));
-    } catch { /* fall through */ }
-  }
-
-  return null;
+  // Path 2: same subprocess auth as regular chat (subscription OAuth or API key)
+  return fetchModelsViaSDK(cliPath, cwd, env);
 }
 
 /**

@@ -7,7 +7,7 @@ import * as path from 'path';
 
 import * as env from '../../../src/utils/env';
 
-const { cliPathRequiresNode, findNodeDirectory, getEnhancedPath, parseEnvironmentVariables } = env;
+const { buildSubprocessEnv, cliPathRequiresNode, findNodeDirectory, getEnhancedPath, parseEnvironmentVariables } = env;
 
 const isWindows = process.platform === 'win32';
 const SEP = isWindows ? ';' : ':';
@@ -41,6 +41,62 @@ describe('parseEnvironmentVariables', () => {
   it('trims whitespace around keys and values', () => {
     const input = '  FOO  =  bar  ';
     expect(parseEnvironmentVariables(input)).toEqual({ FOO: 'bar' });
+  });
+});
+
+describe('buildSubprocessEnv', () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it('drops a stray OS-level ANTHROPIC_API_KEY the user did not configure', () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-stray-system-key';
+
+    const { env: merged, customEnv } = buildSubprocessEnv('', '/usr/bin/claude');
+
+    expect(merged.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(customEnv.ANTHROPIC_API_KEY).toBeUndefined();
+  });
+
+  it('drops a stray OS-level ANTHROPIC_AUTH_TOKEN the same way', () => {
+    process.env.ANTHROPIC_AUTH_TOKEN = 'stray-token';
+
+    const { env: merged } = buildSubprocessEnv('', '/usr/bin/claude');
+
+    expect(merged.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+  });
+
+  it('keeps ANTHROPIC_API_KEY when the user explicitly configured it', () => {
+    delete process.env.ANTHROPIC_API_KEY;
+
+    const { env: merged, customEnv } = buildSubprocessEnv('ANTHROPIC_API_KEY=sk-user-set', '/usr/bin/claude');
+
+    expect(merged.ANTHROPIC_API_KEY).toBe('sk-user-set');
+    expect(customEnv.ANTHROPIC_API_KEY).toBe('sk-user-set');
+  });
+
+  it('overrides a stray OS-level key when the user configures their own', () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-stray-system-key';
+
+    const { env: merged } = buildSubprocessEnv('ANTHROPIC_API_KEY=sk-user-set', '/usr/bin/claude');
+
+    expect(merged.ANTHROPIC_API_KEY).toBe('sk-user-set');
+  });
+
+  it('passes unrelated env vars through untouched', () => {
+    process.env.SOME_OTHER_VAR = 'kept';
+
+    const { env: merged } = buildSubprocessEnv('', '/usr/bin/claude');
+
+    expect(merged.SOME_OTHER_VAR).toBe('kept');
+  });
+
+  it('includes a non-empty PATH', () => {
+    const { env: merged } = buildSubprocessEnv('', '/usr/bin/claude');
+    expect(typeof merged.PATH).toBe('string');
+    expect(merged.PATH.length).toBeGreaterThan(0);
   });
 });
 

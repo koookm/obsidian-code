@@ -658,7 +658,7 @@ export class ObsidianCodeSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('사용 가능한 모델 새로고침')
-      .setDesc(`현재: ${modelSource}. 모델 목록은 플러그인 시작 시 자동으로 갱신되며(6시간 캐시), 새 모델이 출시되면 별도 업데이트 없이 반영됩니다. (Claude Code CLI 인증(구독) 또는 ANTHROPIC_API_KEY 필요)`)
+      .setDesc(`현재: ${modelSource}. 모델 목록은 플러그인 시작 시 자동으로 갱신되며(6시간 캐시), 새 모델이 출시되면 별도 업데이트 없이 반영됩니다. Claude Max 구독으로 로그인되어 있으면 별도 설정 없이 동작합니다.`)
       .addButton((button) => {
         button
           .setButtonText('모델 목록 가져오기')
@@ -670,7 +670,7 @@ export class ObsidianCodeSettingTab extends PluginSettingTab {
               const count = this.plugin.runtimeAvailableModels?.length ?? 0;
               new Notice(`✓ ${count}개 모델을 성공적으로 불러왔습니다.`);
             } else {
-              new Notice('❌ 모델 목록 불러오기 실패. Claude Code CLI로 로그인하거나 환경 변수에 ANTHROPIC_API_KEY를 설정하세요.');
+              new Notice('❌ 모델 목록을 불러오지 못했습니다. 터미널에서 claude를 실행해 로그인되어 있는지, CLI 경로 설정이 올바른지 확인하세요.');
             }
             this.display();
           });
