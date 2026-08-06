@@ -1,16 +1,17 @@
 /**
  * Model type definitions and constants.
  */
+import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import { query as agentQuery } from '@anthropic-ai/claude-agent-sdk';
+
+import { buildSubprocessEnv } from '../../utils/env';
 import { formatModelLabel, parseModelId } from '../models/ModelCatalog';
 
 /** Model identifier (string to support custom models via environment variables). */
 export type ClaudeModel = string;
 
-/** A selectable model entry in the UI catalog. */
-export type ModelOption = { value: string; label: string; description: string };
-
 /** Parse and format a raw model list from the Anthropic API response. */
-function parseModelList(data: any): ModelOption[] | null {
+function parseModelList(data: any): { value: string; label: string; description: string }[] | null {
   if (!data?.data || !Array.isArray(data.data)) return null;
   const models = (data.data as any[])
     .filter((m) => typeof m.id === 'string' && m.id.startsWith('claude-'))
@@ -26,45 +27,101 @@ function parseModelList(data: any): ModelOption[] | null {
 }
 
 /**
- * True when the environment can enumerate models (i.e. an API key is present).
- *
- * Subscription (OAuth) auth cannot list models — see fetchAvailableModels — so
- * the UI uses this to explain *why* a refresh is unavailable instead of telling
- * a correctly logged-in subscriber that their login failed.
+ * Fetches the model list the same way the CLI itself resolves it, via the
+ * Agent SDK's `supportedModels()` control request — no ANTHROPIC_API_KEY
+ * required. This opens a streaming query (required for control requests),
+ * asks for the model list over the control channel, and tears the subprocess
+ * down again without ever sending a prompt — so it costs nothing and works
+ * for subscription (CLI OAuth) auth exactly like a normal chat turn does.
  */
-export function hasModelApiKey(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY);
+async function fetchModelsViaSDK(
+  cliPath: string,
+  cwd: string,
+  env: Record<string, string>,
+  timeoutMs = 15000
+): Promise<{ value: string; label: string; description: string }[] | null> {
+  if (!cliPath) return null;
+
+  // eslint-disable-next-line require-yield -- streaming input with nothing to send; keeps the control channel open without spending a turn.
+  async function* noPrompt(): AsyncGenerator<never> {
+    await new Promise<never>(() => { /* never resolves; caller races this against a timeout */ });
+  }
+
+  const options: Options = { cwd, pathToClaudeCodeExecutable: cliPath, env };
+  const q = agentQuery({ prompt: noPrompt(), options });
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const models = await Promise.race([
+      q.supportedModels(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timeout')), timeoutMs);
+      }),
+    ]);
+
+    const seen = new Set<string>();
+    const entries: { value: string; label: string; description: string }[] = [];
+    for (const m of models) {
+      // 'default' just points at whatever alias the CLI currently favors —
+      // skip it so it doesn't shadow the real alias row for that model.
+      if (m.value === 'default') continue;
+      const id = m.resolvedModel;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      entries.push({
+        value: id,
+        label: formatModelLabel(id),
+        description: m.description || id,
+      });
+    }
+    return entries.length > 0 ? entries : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    // Never sent a message, so there is nothing to interrupt server-side;
+    // this just releases the local subprocess.
+    try { await q.interrupt(); } catch { /* already gone */ }
+    try { await q.return(undefined); } catch { /* already gone */ }
+  }
 }
 
 /**
- * Fetches the list of available Claude models from the Anthropic REST API.
+ * Fetches the list of available Claude models.
  *
- * Requires ANTHROPIC_API_KEY. There is deliberately no CLI fallback: the Claude
- * Code CLI exposes no model-listing command, so the previous
- * `claude api get /v1/models` fallback was parsed as a *prompt* ("api get
- * /v1/models") and silently ran a billable inference query whose plain-text
- * output could never parse as JSON. Subscription users keep the offline
- * DEFAULT_CLAUDE_MODELS catalog, which the CLI resolves to concrete versions at
- * request time anyway.
- *
- * Returns null when no key is configured or the request fails.
+ * Tries ANTHROPIC_API_KEY (direct REST, when the user configured one) first,
+ * then falls back to the same auth path regular chat queries use — so
+ * subscription (CLI OAuth) users get this working with zero extra setup.
  */
-export async function fetchAvailableModels(): Promise<ModelOption[] | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
+export async function fetchModelsFromCLI(
+  cliPath: string,
+  envText = '',
+  cwd = process.cwd()
+): Promise<{ value: string; label: string; description: string }[] | null> {
+  const { env, customEnv } = buildSubprocessEnv(envText, cliPath);
+  // Only a user-configured key counts here — buildSubprocessEnv already drops a
+  // stray OS-level ANTHROPIC_API_KEY unless the user set it explicitly, and
+  // regular chat ignores it too, so this stays consistent with what chat sees.
+  const apiKey = customEnv.ANTHROPIC_API_KEY;
 
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/models', {
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-    });
-    if (!res.ok) return null;
-    return parseModelList(await res.json());
-  } catch {
-    return null;
+  // Path 1: API key → direct REST call
+  if (apiKey) {
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/models', {
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+      });
+      if (res.ok) {
+        const parsed = parseModelList(await res.json());
+        if (parsed) return parsed;
+      }
+    } catch { /* fall through */ }
   }
+
+  // Path 2: same subprocess auth as regular chat (subscription OAuth or API key)
+  return fetchModelsViaSDK(cliPath, cwd, env);
 }
 
 /**

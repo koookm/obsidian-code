@@ -13,7 +13,7 @@ import * as path from 'path';
 
 import type ObsidianCodePlugin from '../../main';
 import { stripCurrentNotePrefix } from '../../utils/context';
-import { getEnhancedPath, parseEnvironmentVariables } from '../../utils/env';
+import { buildSubprocessEnv } from '../../utils/env';
 import { getPathAccessType, getVaultPath, normalizePathForFilesystem } from '../../utils/path';
 import { buildContextFromHistory, getLastUserMessage, isSessionExpiredError } from '../../utils/session';
 import {
@@ -395,31 +395,9 @@ export class ObsidianCodeService {
     this.sessionManager.setPendingModel(selectedModel);
     this.vaultPath = cwd;
 
-    // Parse custom environment variables from settings
-    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
-
-    // Enhance PATH for GUI apps (Obsidian has minimal PATH)
-    // User-specified PATH from settings takes priority
-    // Pass CLI path so we can auto-detect Node.js if using .js file
-    const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
-
-    // Build base environment, filtering out API key vars that would override OAuth auth.
-    // When a user authenticates via Claude Max/Pro subscription (OAuth), the CLI reads
-    // credentials from ~/.claude/.credentials.json. If ANTHROPIC_API_KEY is present in
-    // the Obsidian process environment (set by another tool or system config), it gets
-    // passed to the CLI subprocess and switches it to API billing mode, causing
-    // "Credit balance too low" errors even for valid subscription users.
-    // We only pass these vars if the user explicitly set them in the plugin settings.
-    const OAUTH_OVERRIDE_VARS = new Set(['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN']);
-    const baseEnv: Record<string, string> = {};
-    for (const [key, value] of Object.entries(process.env)) {
-      if (OAUTH_OVERRIDE_VARS.has(key) && !(key in customEnv)) {
-        continue; // Do not let system-level API vars override OAuth subscription auth
-      }
-      if (value !== undefined) {
-        baseEnv[key] = value;
-      }
-    }
+    // Subprocess env: enhanced PATH + OAuth-safe filtering (see buildSubprocessEnv).
+    // Shared with the model-list fetch so subscription users get identical auth there.
+    const { env: subprocessEnv } = buildSubprocessEnv(this.plugin.getActiveEnvironmentVariables(), cliPath);
 
     // Build the prompt - either a string or content blocks with images
     const queryPrompt = this.buildPromptWithImages(prompt, images);
@@ -451,11 +429,7 @@ export class ObsidianCodeService {
       settingSources: this.plugin.settings.loadUserClaudeSettings
         ? ['user', 'project']
         : ['project'],
-      env: {
-        ...baseEnv,    // Filtered env: API key vars removed unless user explicitly set them
-        ...customEnv,  // User plugin settings take priority
-        PATH: enhancedPath,
-      },
+      env: subprocessEnv,
     };
 
     // Add MCP servers to options

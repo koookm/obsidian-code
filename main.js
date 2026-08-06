@@ -26077,6 +26077,20 @@ function getEnhancedPath(additionalPaths, cliPath) {
   });
   return unique.join(PATH_SEPARATOR);
 }
+var OAUTH_OVERRIDE_VARS = /* @__PURE__ */ new Set(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]);
+function buildSubprocessEnv(envText, cliPath) {
+  const customEnv = parseEnvironmentVariables(envText);
+  const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
+  const filteredProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (OAUTH_OVERRIDE_VARS.has(key) && !(key in customEnv)) continue;
+    if (value !== void 0) filteredProcessEnv[key] = value;
+  }
+  return {
+    env: { ...filteredProcessEnv, ...customEnv, PATH: enhancedPath },
+    customEnv
+  };
+}
 function parseEnvironmentVariables(input) {
   const result = {};
   for (const line of input.split(/\r?\n/)) {
@@ -26848,24 +26862,69 @@ function parseModelList(data) {
   }));
   return models.length > 0 ? models : null;
 }
-function hasModelApiKey() {
-  return Boolean(process.env.ANTHROPIC_API_KEY);
-}
-async function fetchAvailableModels() {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/models", {
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
-      }
+async function fetchModelsViaSDK(cliPath, cwd, env, timeoutMs = 15e3) {
+  if (!cliPath) return null;
+  async function* noPrompt() {
+    await new Promise(() => {
     });
-    if (!res.ok) return null;
-    return parseModelList(await res.json());
+  }
+  const options = { cwd, pathToClaudeCodeExecutable: cliPath, env };
+  const q = HAt({ prompt: noPrompt(), options });
+  let timer;
+  try {
+    const models = await Promise.race([
+      q.supportedModels(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
+      })
+    ]);
+    const seen = /* @__PURE__ */ new Set();
+    const entries = [];
+    for (const m of models) {
+      if (m.value === "default") continue;
+      const id = m.resolvedModel;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      entries.push({
+        value: id,
+        label: formatModelLabel(id),
+        description: m.description || id
+      });
+    }
+    return entries.length > 0 ? entries : null;
   } catch (e) {
     return null;
+  } finally {
+    clearTimeout(timer);
+    try {
+      await q.interrupt();
+    } catch (e) {
+    }
+    try {
+      await q.return(void 0);
+    } catch (e) {
+    }
   }
+}
+async function fetchModelsFromCLI(cliPath, envText = "", cwd = process.cwd()) {
+  const { env, customEnv } = buildSubprocessEnv(envText, cliPath);
+  const apiKey = customEnv.ANTHROPIC_API_KEY;
+  if (apiKey) {
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/models", {
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01"
+        }
+      });
+      if (res.ok) {
+        const parsed = parseModelList(await res.json());
+        if (parsed) return parsed;
+      }
+    } catch (e) {
+    }
+  }
+  return fetchModelsViaSDK(cliPath, cwd, env);
 }
 var DEFAULT_CLAUDE_MODELS = [
   { value: "claude-fable-5", label: "Claude Fable 5", description: "\uD50C\uB798\uADF8\uC2ED \u2014 \uAC00\uC7A5 \uAC15\uB825\uD55C \uBAA8\uB378" },
@@ -28208,18 +28267,7 @@ User: ${prompt}` : historyContext : prompt;
     const permissionMode = this.plugin.settings.permissionMode;
     this.sessionManager.setPendingModel(selectedModel);
     this.vaultPath = cwd;
-    const customEnv = parseEnvironmentVariables(this.plugin.getActiveEnvironmentVariables());
-    const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
-    const OAUTH_OVERRIDE_VARS = /* @__PURE__ */ new Set(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]);
-    const baseEnv = {};
-    for (const [key, value] of Object.entries(process.env)) {
-      if (OAUTH_OVERRIDE_VARS.has(key) && !(key in customEnv)) {
-        continue;
-      }
-      if (value !== void 0) {
-        baseEnv[key] = value;
-      }
-    }
+    const { env: subprocessEnv } = buildSubprocessEnv(this.plugin.getActiveEnvironmentVariables(), cliPath);
     const queryPrompt = this.buildPromptWithImages(prompt, images);
     const hasEditorContext = prompt.includes("<editor_selection");
     const systemPrompt = buildSystemPrompt({
@@ -28243,13 +28291,7 @@ User: ${prompt}` : historyContext : prompt;
       // that bypass ObsidianCode's permission system. Skills from ~/.claude/skills/
       // are still discovered regardless (not in settings.json).
       settingSources: this.plugin.settings.loadUserClaudeSettings ? ["user", "project"] : ["project"],
-      env: {
-        ...baseEnv,
-        // Filtered env: API key vars removed unless user explicitly set them
-        ...customEnv,
-        // User plugin settings take priority
-        PATH: enhancedPath
-      }
+      env: subprocessEnv
     };
     const mcpMentions = (queryOptions == null ? void 0 : queryOptions.mcpMentions) || /* @__PURE__ */ new Set();
     const uiEnabledServers = (queryOptions == null ? void 0 : queryOptions.enabledMcpServers) || /* @__PURE__ */ new Set();
@@ -44469,26 +44511,21 @@ var ObsidianCodeSettingTab = class extends import_obsidian35.PluginSettingTab {
     const availableModels = this.plugin.getAvailableModels();
     const fetchedAt = this.plugin.modelsFetchedAt;
     const modelSource = this.plugin.runtimeAvailableModels ? `Anthropic API\uC5D0\uC11C ${availableModels.length}\uAC1C \uBAA8\uB378 \uB85C\uB4DC\uB428` + (fetchedAt ? ` (${new Date(fetchedAt).toLocaleString()} \uAE30\uC900)` : "") : `\uAE30\uBCF8 \uBAA8\uB378 \uBAA9\uB85D \uC0AC\uC6A9 \uC911 (${availableModels.length}\uAC1C)`;
-    const canFetchModels = hasModelApiKey();
-    const refreshDesc = canFetchModels ? `\uD604\uC7AC: ${modelSource}. \uBAA8\uB378 \uBAA9\uB85D\uC740 \uD50C\uB7EC\uADF8\uC778 \uC2DC\uC791 \uC2DC \uC790\uB3D9\uC73C\uB85C \uAC31\uC2E0\uB429\uB2C8\uB2E4(6\uC2DC\uAC04 \uCE90\uC2DC). \uC0C8 \uBAA8\uB378\uC774 \uCD9C\uC2DC\uB418\uBA74 \uBCC4\uB3C4 \uC5C5\uB370\uC774\uD2B8 \uC5C6\uC774 \uBC18\uC601\uB429\uB2C8\uB2E4.` : `\uD604\uC7AC: ${modelSource}. \uBAA8\uB378 \uBAA9\uB85D \uC870\uD68C\uB294 ANTHROPIC_API_KEY\uAC00 \uC788\uC744 \uB54C\uB9CC \uAC00\uB2A5\uD569\uB2C8\uB2E4 \u2014 Anthropic\uC758 \uBAA8\uB378 \uBAA9\uB85D API\uAC00 API \uD0A4\uB9CC \uBC1B\uACE0, Claude Code CLI\uC5D0\uB294 \uB300\uC751\uD558\uB294 \uBA85\uB839\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. Claude Max \uAD6C\uB3C5 \uC778\uC99D\uC740 \uCC44\uD305\uC5D0 \uC815\uC0C1 \uC0AC\uC6A9\uB418\uBA70, \uBAA8\uB378 \uC120\uD0DD\uC740 \uC544\uB798 \uAE30\uBCF8 \uBAA9\uB85D\uC73C\uB85C \uB3D9\uC791\uD569\uB2C8\uB2E4("(Latest)" \uD56D\uBAA9\uC740 CLI\uAC00 \uC2E4\uD589 \uC2DC\uC810\uC5D0 \uCD5C\uC2E0 \uBC84\uC804\uC73C\uB85C \uD574\uC11D).`;
-    const refreshSetting = new import_obsidian35.Setting(containerEl).setName("\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uBAA8\uB378 \uC0C8\uB85C\uACE0\uCE68").setDesc(refreshDesc);
-    if (canFetchModels) {
-      refreshSetting.addButton((button) => {
-        button.setButtonText("\uBAA8\uB378 \uBAA9\uB85D \uAC00\uC838\uC624\uAE30").onClick(async () => {
-          var _a6, _b5;
-          button.setButtonText("\uBD88\uB7EC\uC624\uB294 \uC911...");
-          button.setDisabled(true);
-          const success = await this.plugin.refreshAvailableModels();
-          if (success) {
-            const count = (_b5 = (_a6 = this.plugin.runtimeAvailableModels) == null ? void 0 : _a6.length) != null ? _b5 : 0;
-            new import_obsidian35.Notice(`\u2713 ${count}\uAC1C \uBAA8\uB378\uC744 \uC131\uACF5\uC801\uC73C\uB85C \uBD88\uB7EC\uC654\uC2B5\uB2C8\uB2E4.`);
-          } else {
-            new import_obsidian35.Notice("\u274C \uBAA8\uB378 \uBAA9\uB85D \uBD88\uB7EC\uC624\uAE30 \uC2E4\uD328. ANTHROPIC_API_KEY\uAC00 \uC720\uD6A8\uD55C\uC9C0, \uB124\uD2B8\uC6CC\uD06C \uC5F0\uACB0\uC774 \uAC00\uB2A5\uD55C\uC9C0 \uD655\uC778\uD558\uC138\uC694.");
-          }
-          this.display();
-        });
+    new import_obsidian35.Setting(containerEl).setName("\uC0AC\uC6A9 \uAC00\uB2A5\uD55C \uBAA8\uB378 \uC0C8\uB85C\uACE0\uCE68").setDesc(`\uD604\uC7AC: ${modelSource}. \uBAA8\uB378 \uBAA9\uB85D\uC740 \uD50C\uB7EC\uADF8\uC778 \uC2DC\uC791 \uC2DC \uC790\uB3D9\uC73C\uB85C \uAC31\uC2E0\uB418\uBA70(6\uC2DC\uAC04 \uCE90\uC2DC), \uC0C8 \uBAA8\uB378\uC774 \uCD9C\uC2DC\uB418\uBA74 \uBCC4\uB3C4 \uC5C5\uB370\uC774\uD2B8 \uC5C6\uC774 \uBC18\uC601\uB429\uB2C8\uB2E4. Claude Max \uAD6C\uB3C5\uC73C\uB85C \uB85C\uADF8\uC778\uB418\uC5B4 \uC788\uC73C\uBA74 \uBCC4\uB3C4 \uC124\uC815 \uC5C6\uC774 \uB3D9\uC791\uD569\uB2C8\uB2E4.`).addButton((button) => {
+      button.setButtonText("\uBAA8\uB378 \uBAA9\uB85D \uAC00\uC838\uC624\uAE30").onClick(async () => {
+        var _a6, _b5;
+        button.setButtonText("\uBD88\uB7EC\uC624\uB294 \uC911...");
+        button.setDisabled(true);
+        const success = await this.plugin.refreshAvailableModels();
+        if (success) {
+          const count = (_b5 = (_a6 = this.plugin.runtimeAvailableModels) == null ? void 0 : _a6.length) != null ? _b5 : 0;
+          new import_obsidian35.Notice(`\u2713 ${count}\uAC1C \uBAA8\uB378\uC744 \uC131\uACF5\uC801\uC73C\uB85C \uBD88\uB7EC\uC654\uC2B5\uB2C8\uB2E4.`);
+        } else {
+          new import_obsidian35.Notice("\u274C \uBAA8\uB378 \uBAA9\uB85D\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C claude\uB97C \uC2E4\uD589\uD574 \uB85C\uADF8\uC778\uB418\uC5B4 \uC788\uB294\uC9C0, CLI \uACBD\uB85C \uC124\uC815\uC774 \uC62C\uBC14\uB978\uC9C0 \uD655\uC778\uD558\uC138\uC694.");
+        }
+        this.display();
       });
-    }
+    });
     new import_obsidian35.Setting(containerEl).setName("\uAE30\uBCF8 \uBAA8\uB378").setDesc('\uCC44\uD305\uC5D0\uC11C \uC0AC\uC6A9\uD560 \uAE30\uBCF8 Claude \uBAA8\uB378. "(Latest)" \uD56D\uBAA9\uC740 CLI\uAC00 \uC2E4\uD589 \uC2DC\uC810\uC5D0 \uCD5C\uC2E0 \uBC84\uC804\uC73C\uB85C \uD574\uC11D\uD569\uB2C8\uB2E4.').addDropdown((dropdown) => {
       const catalog = this.plugin.getModelCatalog();
       for (const model of catalog.latest) {
@@ -44719,7 +44756,10 @@ var ObsidianCodePlugin = class extends import_obsidian36.Plugin {
   async refreshAvailableModels() {
     if (this.modelRefreshPromise) return this.modelRefreshPromise;
     this.modelRefreshPromise = (async () => {
-      const models = await fetchAvailableModels();
+      var _a6, _b5;
+      const cliPath = (_a6 = this.getResolvedClaudeCliPath()) != null ? _a6 : "";
+      const cwd = (_b5 = getVaultPath(this.app)) != null ? _b5 : void 0;
+      const models = await fetchModelsFromCLI(cliPath, this.getActiveEnvironmentVariables(), cwd);
       if (!models || models.length === 0) return false;
       this.runtimeAvailableModels = models;
       this.modelsFetchedAt = Date.now();

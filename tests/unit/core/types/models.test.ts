@@ -6,103 +6,36 @@ import {
   DEFAULT_CLAUDE_MODELS,
   DEFAULT_MODEL,
   FAMILY_THINKING_BUDGET,
-  fetchAvailableModels,
   getDefaultThinkingBudget,
-  hasModelApiKey,
 } from '@/core/types/models';
 
-describe('model list fetching', () => {
-  const originalKey = process.env.ANTHROPIC_API_KEY;
-  let fetchMock: jest.Mock;
+// Behaviour of the fetch itself lives in fetchModelsFromCLI.test.ts. This is a
+// source-level guard against re-introducing the specific broken call.
+//
+// Regression: the model refresh used to shell out to `claude api get
+// /v1/models`, but the CLI has no `api` subcommand — those words were parsed as
+// a *prompt*, so every refresh silently ran a billable inference query whose
+// prose output could never parse as JSON. The model list is now read through
+// the Agent SDK's supportedModels() control request instead, which is why an
+// SDK-owned subprocess is expected here but a direct child_process call is not.
+//
+// Asserted against the module source rather than with a child_process spy: the
+// old code bound promisify(execFile) at module load, so a spy installed later
+// would never have seen the call.
+describe('models module', () => {
+  const source = readFileSync(
+    join(__dirname, '../../../../src/core/types/models.ts'),
+    'utf8',
+  );
 
-  beforeEach(() => {
-    fetchMock = jest.fn();
-    (globalThis as any).fetch = fetchMock;
-    delete process.env.ANTHROPIC_API_KEY;
+  it('never shells out to the Claude CLI directly', () => {
+    expect(source).not.toMatch(/child_process/);
+    expect(source).not.toMatch(/execFile|execSync/);
   });
 
-  afterEach(() => {
-    jest.restoreAllMocks();
-    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
-    else process.env.ANTHROPIC_API_KEY = originalKey;
-  });
-
-  const okResponse = (body: unknown) => ({ ok: true, json: async () => body });
-
-  describe('hasModelApiKey', () => {
-    it('is false when no API key is configured', () => {
-      expect(hasModelApiKey()).toBe(false);
-    });
-
-    it('is true when an API key is configured', () => {
-      process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
-      expect(hasModelApiKey()).toBe(true);
-    });
-  });
-
-  describe('fetchAvailableModels', () => {
-    it('returns null without an API key, and issues no request', async () => {
-      await expect(fetchAvailableModels()).resolves.toBeNull();
-      expect(fetchMock).not.toHaveBeenCalled();
-    });
-
-    // Regression: the old CLI path ran `claude api get /v1/models`, but the CLI
-    // has no `api` subcommand — it was parsed as a prompt and silently billed an
-    // inference query whose text output could never parse as JSON.
-    //
-    // Asserted against the module source rather than with a child_process spy:
-    // the old code bound `promisify(execFile)` at module load, so a spy
-    // installed later would never have seen the call.
-    it('never shells out to the Claude CLI', () => {
-      const source = readFileSync(
-        join(__dirname, '../../../../src/core/types/models.ts'),
-        'utf8',
-      );
-      expect(source).not.toMatch(/child_process/);
-      expect(source).not.toMatch(/execFile|spawn|execSync/);
-      expect(source).not.toMatch(/'api', 'get'/);
-    });
-
-    it('parses the model list from the REST API when a key is present', async () => {
-      process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
-      fetchMock.mockResolvedValueOnce(okResponse({
-        data: [
-          { id: 'claude-sonnet-5', display_name: 'Claude Sonnet 5', context_window: 200000 },
-          { id: 'claude-opus-5', display_name: 'Claude Opus 5', context_window: 200000 },
-        ],
-      }));
-
-      const models = await fetchAvailableModels();
-
-      expect(models).toEqual([
-        { value: 'claude-sonnet-5', label: 'Claude Sonnet 5', description: '컨텍스트 200k 토큰' },
-        { value: 'claude-opus-5', label: 'Claude Opus 5', description: '컨텍스트 200k 토큰' },
-      ]);
-      expect(fetchMock).toHaveBeenCalledWith(
-        'https://api.anthropic.com/v1/models',
-        expect.objectContaining({
-          headers: expect.objectContaining({ 'x-api-key': 'sk-ant-test' }),
-        }),
-      );
-    });
-
-    it('returns null on a non-ok response', async () => {
-      process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
-      fetchMock.mockResolvedValueOnce({ ok: false, json: async () => ({}) });
-      await expect(fetchAvailableModels()).resolves.toBeNull();
-    });
-
-    it('returns null when the request throws', async () => {
-      process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
-      fetchMock.mockRejectedValueOnce(new Error('offline'));
-      await expect(fetchAvailableModels()).resolves.toBeNull();
-    });
-
-    it('returns null when the response carries no usable models', async () => {
-      process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
-      fetchMock.mockResolvedValueOnce(okResponse({ data: [{ id: 'gpt-4' }] }));
-      await expect(fetchAvailableModels()).resolves.toBeNull();
-    });
+  it('never asks the CLI for a nonexistent `api` subcommand', () => {
+    expect(source).not.toMatch(/'api',\s*'get'/);
+    expect(source).not.toMatch(/api get \/v1\/models/);
   });
 });
 

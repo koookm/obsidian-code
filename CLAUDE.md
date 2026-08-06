@@ -251,7 +251,7 @@ model shows up without a plugin update.
 
 | Stage | Behavior |
 |-------|----------|
-| Fetch | `GET /v1/models` via `ANTHROPIC_API_KEY`, else `claude api get /v1/models` (subscription OAuth) |
+| Fetch | `GET /v1/models` REST when the user configured `ANTHROPIC_API_KEY`; otherwise the Agent SDK's `Query.supportedModels()` control request — the same subprocess auth as a normal chat turn, so subscription (CLI OAuth) users need no extra setup |
 | Cache | Persisted to `data.json` (`modelListCache`), refreshed in the background when older than 6h |
 | Fallback | `DEFAULT_CLAUDE_MODELS` — offline only, never needs to be exhaustive |
 | Catalog | `ModelCatalog` groups ids by family/version into two tiers |

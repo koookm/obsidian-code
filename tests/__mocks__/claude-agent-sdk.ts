@@ -38,16 +38,23 @@ const mockMessages = [
 let customMockMessages: any[] | null = null;
 let lastOptions: Options | undefined;
 let lastResponse: (AsyncGenerator<any> & { interrupt: jest.Mock }) | null = null;
+let mockSupportedModels: any[] | Error | null = null;
 
 // Allow tests to set custom mock messages
 export function setMockMessages(messages: any[]) {
   customMockMessages = messages;
 }
 
+/** Sets what `Query.supportedModels()` resolves (or rejects, if given an Error) to. */
+export function setMockSupportedModels(models: any[] | Error) {
+  mockSupportedModels = models;
+}
+
 export function resetMockMessages() {
   customMockMessages = null;
   lastOptions = undefined;
   lastResponse = null;
+  mockSupportedModels = null;
 }
 
 export function getLastOptions(): Options | undefined {
@@ -132,8 +139,14 @@ export function query({ prompt: _prompt, options }: { prompt: string; options: O
     }
   };
 
-  const gen = generator() as AsyncGenerator<any> & { interrupt: jest.Mock };
+  const gen = generator() as AsyncGenerator<any> & { interrupt: jest.Mock; return: jest.Mock; supportedModels: jest.Mock };
   gen.interrupt = jest.fn().mockResolvedValue(undefined);
+  gen.return = jest.fn().mockResolvedValue({ value: undefined, done: true });
+  gen.supportedModels = jest.fn(() =>
+    mockSupportedModels instanceof Error
+      ? Promise.reject(mockSupportedModels)
+      : Promise.resolve(mockSupportedModels ?? [])
+  );
   lastResponse = gen;
 
   return gen;

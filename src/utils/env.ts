@@ -307,6 +307,48 @@ export function getEnhancedPath(additionalPaths?: string, cliPath?: string): str
   return unique.join(PATH_SEPARATOR);
 }
 
+/** Env vars that, if present at the OS level, silently switch OAuth (subscription) auth to API billing. */
+const OAUTH_OVERRIDE_VARS = new Set(['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN']);
+
+/** Environment ready to hand to a spawned Claude CLI subprocess. */
+export interface SubprocessEnv {
+  /** Full merged environment, including PATH. */
+  env: Record<string, string>;
+  /** User-configured `KEY=VALUE` vars, parsed (subset of `env`). */
+  customEnv: Record<string, string>;
+}
+
+/**
+ * Builds the environment for spawning the Claude CLI — the single source of
+ * truth for "how does this plugin's subprocess get its auth", used for both
+ * chat queries and the model-list fetch so subscription (CLI OAuth) users get
+ * the exact same auth path in both places.
+ *
+ * When a user authenticates via Claude Max/Pro subscription, the CLI reads
+ * credentials from `~/.claude/.credentials.json`. If `ANTHROPIC_API_KEY` (or
+ * `ANTHROPIC_AUTH_TOKEN`) happens to be set in Obsidian's own process
+ * environment — by another tool, a shell profile, system config, anything
+ * outside this plugin — passing it through would silently switch the
+ * subprocess to API billing and produce confusing "credit balance" or
+ * "API key" errors for a valid subscription user. Those two vars are
+ * therefore dropped unless the user explicitly set them in plugin settings.
+ */
+export function buildSubprocessEnv(envText: string, cliPath: string): SubprocessEnv {
+  const customEnv = parseEnvironmentVariables(envText);
+  const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
+
+  const filteredProcessEnv: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (OAUTH_OVERRIDE_VARS.has(key) && !(key in customEnv)) continue;
+    if (value !== undefined) filteredProcessEnv[key] = value;
+  }
+
+  return {
+    env: { ...filteredProcessEnv, ...customEnv, PATH: enhancedPath },
+    customEnv,
+  };
+}
+
 /** Parses KEY=VALUE environment variables from text. Supports comments (#) and empty lines. */
 export function parseEnvironmentVariables(input: string): Record<string, string> {
   const result: Record<string, string> = {};

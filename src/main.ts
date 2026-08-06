@@ -24,7 +24,7 @@ import {
   DEFAULT_SETTINGS,
   VIEW_TYPE_OBSIDIAN_CODE,
 } from './core/types';
-import { fetchAvailableModels } from './core/types/models';
+import { fetchModelsFromCLI } from './core/types/models';
 import { ObsidianCodeView } from './features/chat/ObsidianCodeView';
 import { ConversationSummaryService } from './features/chat/services/ConversationSummaryService';
 import { McpService } from './features/mcp/McpService';
@@ -38,6 +38,7 @@ import {
   formatConversationAsMarkdown,
   formatSummaryAsMarkdown,
 } from './utils/noteExport';
+import { getVaultPath } from './utils/path';
 
 /** How long a fetched model list is considered fresh (6 hours). */
 const MODEL_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -69,7 +70,9 @@ export default class ObsidianCodePlugin extends Plugin {
     if (this.modelRefreshPromise) return this.modelRefreshPromise;
 
     this.modelRefreshPromise = (async () => {
-      const models = await fetchAvailableModels();
+      const cliPath = this.getResolvedClaudeCliPath() ?? '';
+      const cwd = getVaultPath(this.app) ?? undefined;
+      const models = await fetchModelsFromCLI(cliPath, this.getActiveEnvironmentVariables(), cwd);
       if (!models || models.length === 0) return false;
 
       this.runtimeAvailableModels = models;
