@@ -348,11 +348,11 @@ Apollo급 시스템을 목표로 할 때 반드시 갖춰야 하는 계층입니
 
 ## 5. 우선순위 판단
 
-| Phase | 노력 | 독립적 가치 | Apollo 모델 기여 | 권장 |
+| Phase | 노력 | 독립적 가치 | Apollo 모델 기여 | 상태 |
 |---|---|---|---|---|
-| 0 (Plan 타입화 + 저널) | 중 | **높음** (즉시 유용) | 필수 기반 | 🟢 **먼저 시작** |
-| 1 (헬스 프로브) | 중 | **높음** (볼트 린터로 단독 판매 가능) | 필수 기반 | 🟢 **먼저 시작** |
-| 2 (제약 엔진) | 중 | 중 (주로 리팩터링) | 높음 | 🟡 Phase 0/1 이후 |
+| 0 (Plan 타입화 + 저널) | 중 | **높음** (즉시 유용) | 필수 기반 | ✅ **core 구현 완료** |
+| 1 (헬스 프로브) | 중 | **높음** (볼트 린터로 단독 판매 가능) | 필수 기반 | ✅ **core 구현 완료** |
+| 2 (제약 엔진) | 중 | 중 (주로 리팩터링) | 높음 | 🟡 **다음 차례** |
 | 3 (오케스트레이션) | 높음 | 높으나 리스크 큼 | **핵심** | 🟡 신중히 |
 | 4 (채널/승격) | 높음 | 중 | 높음 | 🔴 후순위 |
 | 5 (플릿) | 높음 | 낮음 (개인 사용자 대부분 단일 볼트) | 중 | 🔴 후순위 |
@@ -380,18 +380,38 @@ Apollo급 시스템을 목표로 할 때 반드시 갖춰야 하는 계층입니
 
 ---
 
-## 7. 즉시 착수 가능한 첫 커밋 후보
+## 7. 구현 현황
 
-TDD 원칙에 맞춰, 테스트부터 작성 가능한 최소 단위:
+### 완료 (core 계층)
 
-1. `tests/unit/core/health/LinkIntegrityProbe.test.ts` → `src/core/health/probes/LinkIntegrityProbe.ts`
-   - 순수 함수(마크다운 문자열 + 파일 목록 → 깨진 링크 목록). Obsidian API 의존 없음 = 테스트 용이.
-2. `tests/unit/core/journal/ChangeJournal.test.ts` → `src/core/journal/ChangeJournal.ts`
-   - `VaultFileAdapter` 목(mock)으로 append/revert 검증. `tests/__mocks__` 기존 패턴 재사용.
-3. `src/core/constraints/MaintenanceWindowConstraint.ts` + 테스트
-   - cron 유사 표현식 파싱 + 창 교집합 해석. 완전 순수 로직.
+**Phase 0**
+- `src/core/types/plan.ts` — `VaultPlan` 타입 + Plan Mode 마크다운 파서
+  (코드 스팬/위키링크에서 target 추출, 펜스 블록·셸 명령·플래그 제외)
+- `src/core/journal/ChangeJournal.ts` — `.claude/journal/{planId}.jsonl`,
+  플랜 단위 되돌리기. 파일별로 **첫 기록의 before**로 복원하고 **마지막 기록의 after**로
+  충돌을 검사하므로, 이후 사용자가 편집한 파일은 덮어쓰지 않고 건너뜁니다.
+  캡 초과 콘텐츠는 `not_captured`로 보고 — 조용히 아무것도 복원하지 않는 일이 없습니다.
+- `src/core/hooks/DiffTrackingHooks.ts` — 선택적 change sink 추가.
+  `existed` 플래그로 "빈 파일"과 "없던 파일"을 구분 (후자만 삭제로 되돌림).
 
-세 파일 모두 `core/`에 위치하며 기능 모듈에 의존하지 않으므로 아키텍처 원칙을 지킵니다.
+**Phase 1**
+- `src/core/health/linkParser.ts` — 순수 위키링크 파서/리졸버.
+  코드 펜스·인라인 코드를 **오프셋 보존 마스킹**하여 줄 번호 정확도 유지.
+- `src/core/health/probes/LinkIntegrityProbe.ts`, `EmbedProbe.ts`,
+  `FrontmatterSchemaProbe.ts`
+- `src/core/health/HealthRunner.ts` — 최악 상태 집계 + 던지는 프로브 격리.
+  `newFindings(before, after)`가 핵심: 이미 문제가 있는 볼트에서 "깨끗함"을 게이트로
+  걸면 모든 플랜이 막히므로, **플랜이 새로 만든 문제**만 책임을 묻습니다.
+
+전부 `core/`에 있고 Obsidian API에 의존하지 않아 단위 테스트가 가능합니다.
+
+### 남은 작업
+
+1. **UI 배선** — `PlanApprovalPanel`에 되돌리기 액션, 프로브 결과 표시
+2. **서비스 배선** — `ObsidianCodeService`에서 change sink를 `ChangeJournal`에 연결하고
+   플랜 실행 전후로 `HealthRunner` 호출
+3. **Phase 2** — `src/core/constraints/ConstraintEvaluator.ts`와
+   `MaintenanceWindowConstraint` (cron 유사 표현식 + 창 교집합 해석, 순수 로직)
 
 ---
 

@@ -12,8 +12,11 @@ src/
 ├── core/                        # Core infrastructure (no feature dependencies)
 │   ├── agent/                   # Claude Agent SDK wrapper
 │   │   └── ObsidianCodeService.ts
+│   ├── health/                  # Vault health probes (link/embed/frontmatter)
+│   │   └── probes/
 │   ├── hooks/                   # PreToolUse/PostToolUse hooks
 │   ├── images/                  # Image caching and loading
+│   ├── journal/                 # Change journal (revertable plan changes)
 │   ├── mcp/                     # MCP server config management
 │   │   └── McpServerManager.ts
 │   ├── models/                  # Dynamic model catalog (id parsing, tiering)
@@ -54,8 +57,10 @@ src/
 | Layer | Folder | Purpose |
 |-------|--------|---------|
 | **core** | `agent/` | Claude Agent SDK wrapper (ObsidianCodeService) |
+| | `health/` | Vault health probes and the runner that compares two reports |
 | | `hooks/` | Security and diff tracking hooks |
 | | `images/` | Image caching with SHA-256 dedup |
+| | `journal/` | Per-plan change journal; reverts a plan as a state change |
 | | `mcp/` | MCP server config loading and filtering (McpServerManager) |
 | | `models/` | Model id parsing, two-tier catalog (ModelCatalog), SDK thinking options |
 | | `prompts/` | System prompts (main agent, inline edit, instruction refine, title generation) |
@@ -63,7 +68,7 @@ src/
 | | `security/` | Approval, blocklist, path validation |
 | | `storage/` | Settings, commands, sessions, MCP storage (Claude Code pattern) |
 | | `tools/` | Tool names, icons, input parsing |
-| | `types/` | Type definitions (includes MCP types) |
+| | `types/` | Type definitions (includes MCP and plan types) |
 | **features** | `chat/` | Main chat view with modular controllers |
 | | `chat/state/` | Centralized chat state management (ChatState) |
 | | `chat/controllers/` | Conversation, Stream, Input, Selection controllers |
@@ -227,6 +232,8 @@ vault/.claude/
 ├── mcp.json                   # MCP server configurations
 ├── commands/                  # Slash commands as Markdown
 │   └── {name}.md              # YAML frontmatter + prompt content
+├── journal/                   # Plan change journals as JSONL
+│   └── {plan-id}.jsonl        # One record per file change
 └── sessions/                  # Chat sessions as JSONL
     └── {conv-id}.jsonl        # Meta line + message lines
 
@@ -239,6 +246,7 @@ vault/.claude/
 | `settings.json` | All settings including `permissions` (like Claude Code) |
 | `mcp.json` | MCP server configs with `_obsidianCode` metadata (Claude Code compatible) |
 | `commands/*.md` | Slash commands with YAML frontmatter |
+| `journal/*.jsonl` | Per-plan file changes, with both sides of each edit |
 | `sessions/*.jsonl` | Conversations (meta + messages per line) |
 | `data.json` | `activeConversationId`, `lastEnvHash`, model tracking, `modelListCache` |
 
