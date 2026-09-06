@@ -30,8 +30,28 @@ export interface FileEditPostCallback {
 export interface DiffContentEntry {
   filePath: string;
   content: string | null;
+  /**
+   * Whether the file existed before the edit. The diff view treats a new file
+   * as empty content, but a journal must tell "was empty" from "was absent" —
+   * only the second one is undone by deleting the file.
+   */
+  existed?: boolean;
   skippedReason?: 'too_large' | 'unavailable';
 }
+
+/** A file change reported to the journal after a successful edit. */
+export interface ChangeSinkEntry {
+  filePath: string;
+  toolName: string;
+  /** Content before the edit; null when the file did not exist or was not captured. */
+  before: string | null;
+  /** Content after the edit; null when it was not captured. */
+  after: string | null;
+  skippedReason?: 'too_large' | 'unavailable';
+}
+
+/** Receives each captured file change so it can be journalled. */
+export type ChangeSink = (entry: ChangeSinkEntry) => void;
 
 /**
  * Create a PreToolUse hook to capture original file content before editing.
@@ -65,14 +85,14 @@ export function createFileHashPreHook(
                 const stats = fs.statSync(fullPath);
                 if (stats.size <= MAX_DIFF_SIZE) {
                   const content = fs.readFileSync(fullPath, 'utf-8');
-                  originalContents.set(toolUseId, { filePath, content });
+                  originalContents.set(toolUseId, { filePath, content, existed: true });
                 } else {
                   // File too large for diff
                   originalContents.set(toolUseId, { filePath, content: null, skippedReason: 'too_large' });
                 }
               } else {
                 // New file
-                originalContents.set(toolUseId, { filePath, content: '' });
+                originalContents.set(toolUseId, { filePath, content: '', existed: false });
               }
             } catch (error) {
               console.warn('Failed to capture original file contents:', fullPath, error);
@@ -94,7 +114,8 @@ export function createFileHashPostHook(
   vaultPath: string | null,
   originalContents: Map<string, DiffContentEntry>,
   pendingDiffData: Map<string, ToolDiffData>,
-  postCallback?: FileEditPostCallback
+  postCallback?: FileEditPostCallback,
+  onChange?: ChangeSink
 ): HookCallbackMatcher {
   return {
     matcher: 'Write|Edit|NotebookEdit',
@@ -154,6 +175,7 @@ export function createFileHashPostHook(
 
             if (diffData) {
               pendingDiffData.set(toolUseId, diffData);
+              onChange?.(toChangeSinkEntry(input.tool_name, diffData, originalEntry));
             }
           }
 
@@ -165,5 +187,33 @@ export function createFileHashPostHook(
         return { continue: true };
       },
     ],
+  };
+}
+
+/**
+ * Maps captured diff data onto a journal entry. A file that did not exist
+ * before the edit is reported as `before: null` so reverting deletes it rather
+ * than leaving an empty file behind.
+ */
+function toChangeSinkEntry(
+  toolName: string,
+  diffData: ToolDiffData,
+  originalEntry: DiffContentEntry | undefined
+): ChangeSinkEntry {
+  if (diffData.skippedReason || diffData.originalContent === undefined) {
+    return {
+      filePath: diffData.filePath,
+      toolName,
+      before: null,
+      after: null,
+      skippedReason: diffData.skippedReason ?? 'unavailable',
+    };
+  }
+
+  return {
+    filePath: diffData.filePath,
+    toolName,
+    before: originalEntry?.existed === false ? null : diffData.originalContent,
+    after: diffData.newContent ?? null,
   };
 }

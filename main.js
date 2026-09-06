@@ -26343,12 +26343,12 @@ function createFileHashPreHook(vaultPath, originalContents) {
                 const stats = fs3.statSync(fullPath);
                 if (stats.size <= MAX_DIFF_SIZE) {
                   const content = fs3.readFileSync(fullPath, "utf-8");
-                  originalContents.set(toolUseId, { filePath, content });
+                  originalContents.set(toolUseId, { filePath, content, existed: true });
                 } else {
                   originalContents.set(toolUseId, { filePath, content: null, skippedReason: "too_large" });
                 }
               } else {
-                originalContents.set(toolUseId, { filePath, content: "" });
+                originalContents.set(toolUseId, { filePath, content: "", existed: false });
               }
             } catch (error) {
               console.warn("Failed to capture original file contents:", fullPath, error);
@@ -26361,7 +26361,7 @@ function createFileHashPreHook(vaultPath, originalContents) {
     ]
   };
 }
-function createFileHashPostHook(vaultPath, originalContents, pendingDiffData, postCallback) {
+function createFileHashPostHook(vaultPath, originalContents, pendingDiffData, postCallback, onChange) {
   return {
     matcher: "Write|Edit|NotebookEdit",
     hooks: [
@@ -26407,6 +26407,7 @@ function createFileHashPostHook(vaultPath, originalContents, pendingDiffData, po
             }
             if (diffData) {
               pendingDiffData.set(toolUseId, diffData);
+              onChange == null ? void 0 : onChange(toChangeSinkEntry(input.tool_name, diffData, originalEntry));
             }
           }
           originalContents.delete(toolUseId);
@@ -26415,6 +26416,24 @@ function createFileHashPostHook(vaultPath, originalContents, pendingDiffData, po
         return { continue: true };
       }
     ]
+  };
+}
+function toChangeSinkEntry(toolName, diffData, originalEntry) {
+  var _a6, _b5;
+  if (diffData.skippedReason || diffData.originalContent === void 0) {
+    return {
+      filePath: diffData.filePath,
+      toolName,
+      before: null,
+      after: null,
+      skippedReason: (_a6 = diffData.skippedReason) != null ? _a6 : "unavailable"
+    };
+  }
+  return {
+    filePath: diffData.filePath,
+    toolName,
+    before: (originalEntry == null ? void 0 : originalEntry.existed) === false ? null : diffData.originalContent,
+    after: (_b5 = diffData.newContent) != null ? _b5 : null
   };
 }
 

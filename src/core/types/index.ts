@@ -103,3 +103,18 @@ export {
   type AskUserQuestionOption,
   type AskUserQuestionQuestion,
 } from './askUserQuestion';
+
+// Plan types
+export {
+  type ConstraintRef,
+  createPlanFromMarkdown,
+  type CreatePlanOptions,
+  extractPlanTargets,
+  extractPlanTitle,
+  type ParsedPlanMarkdown,
+  parsePlanMarkdown,
+  type PlanKind,
+  type PlanStatus,
+  type ProbeRef,
+  type VaultPlan,
+} from './plan';

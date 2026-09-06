@@ -83,3 +83,127 @@ describe('DiffTrackingHooks path normalization', () => {
     }
   });
 });
+
+describe('DiffTrackingHooks change sink', () => {
+  const vaultPath = '/vault';
+  let existsSpy: jest.SpyInstance;
+  let statSpy: jest.SpyInstance;
+  let readSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    existsSpy = jest.spyOn(fs, 'existsSync').mockReturnValue(true);
+    statSpy = jest.spyOn(fs, 'statSync').mockReturnValue({ size: 10 } as any);
+    readSpy = jest.spyOn(fs, 'readFileSync').mockReturnValue('new');
+  });
+
+  afterEach(() => {
+    existsSpy.mockRestore();
+    statSpy.mockRestore();
+    readSpy.mockRestore();
+  });
+
+  function postInput(isError = false) {
+    return {
+      hook_event_name: 'PostToolUse',
+      session_id: 's',
+      transcript_path: '/tmp/t',
+      cwd: vaultPath,
+      tool_name: 'Edit',
+      tool_input: { file_path: 'notes/a.md' },
+      tool_result: { is_error: isError },
+    } as any;
+  }
+
+  const options = { signal: new AbortController().signal };
+
+  it('records whether the file existed before the edit', async () => {
+    const originalContents = new Map();
+    const hook = createFileHashPreHook(vaultPath, originalContents);
+
+    await hook.hooks[0](
+      {
+        hook_event_name: 'PreToolUse',
+        session_id: 's',
+        transcript_path: '/tmp/t',
+        cwd: vaultPath,
+        tool_name: 'Write',
+        tool_input: { file_path: 'notes/a.md' },
+      } as any,
+      'tool-1',
+      options
+    );
+    expect(originalContents.get('tool-1')).toMatchObject({ existed: true });
+
+    existsSpy.mockReturnValue(false);
+    await hook.hooks[0](
+      {
+        hook_event_name: 'PreToolUse',
+        session_id: 's',
+        transcript_path: '/tmp/t',
+        cwd: vaultPath,
+        tool_name: 'Write',
+        tool_input: { file_path: 'notes/b.md' },
+      } as any,
+      'tool-2',
+      options
+    );
+    expect(originalContents.get('tool-2')).toMatchObject({ content: '', existed: false });
+  });
+
+  it('emits a change entry carrying both sides of the edit', async () => {
+    const originalContents = new Map([
+      ['tool-1', { filePath: 'notes/a.md', content: 'old', existed: true }],
+    ]);
+    const onChange = jest.fn();
+    const hook = createFileHashPostHook(vaultPath, originalContents, new Map(), undefined, onChange);
+
+    await hook.hooks[0](postInput(), 'tool-1', options);
+
+    expect(onChange).toHaveBeenCalledWith({
+      filePath: 'notes/a.md',
+      toolName: 'Edit',
+      before: 'old',
+      after: 'new',
+    });
+  });
+
+  it('reports a created file as having no prior content', async () => {
+    const originalContents = new Map([
+      ['tool-1', { filePath: 'notes/a.md', content: '', existed: false }],
+    ]);
+    const onChange = jest.fn();
+    const hook = createFileHashPostHook(vaultPath, originalContents, new Map(), undefined, onChange);
+
+    await hook.hooks[0](postInput(), 'tool-1', options);
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ before: null, after: 'new' })
+    );
+  });
+
+  it('propagates the skip reason when content could not be captured', async () => {
+    const originalContents = new Map([
+      ['tool-1', { filePath: 'notes/a.md', content: null, skippedReason: 'too_large' as const }],
+    ]);
+    const onChange = jest.fn();
+    const hook = createFileHashPostHook(vaultPath, originalContents, new Map(), undefined, onChange);
+
+    await hook.hooks[0](postInput(), 'tool-1', options);
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ before: null, after: null, skippedReason: 'too_large' })
+    );
+  });
+
+  it('emits nothing when the tool call failed', async () => {
+    const originalContents = new Map([
+      ['tool-1', { filePath: 'notes/a.md', content: 'old', existed: true }],
+    ]);
+    const onChange = jest.fn();
+    const hook = createFileHashPostHook(vaultPath, originalContents, new Map(), undefined, onChange);
+
+    await hook.hooks[0](postInput(true), 'tool-1', options);
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});

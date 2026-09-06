@@ -3,6 +3,8 @@
  */
 
 export {
+  type ChangeSink,
+  type ChangeSinkEntry,
   createFileHashPostHook,
   createFileHashPreHook,
   type DiffContentEntry,
