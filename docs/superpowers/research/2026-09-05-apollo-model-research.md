@@ -1,3 +1,14 @@
+---
+title: Palantir Apollo 모델 리서치 및 ObsidianCode 연계 설계
+date: 2026-09-05
+tags:
+  - research/palantir
+  - architecture/orchestration
+  - project/obsidian-code
+status: draft
+source: https://github.com/koookm/obsidian-code/pull/7
+---
+
 # Palantir Apollo 모델 리서치 및 ObsidianCode 연계 설계
 
 **Date:** 2026-09-05
